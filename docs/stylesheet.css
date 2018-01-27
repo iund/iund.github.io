@@ -1,0 +1,23 @@
+/* use a 4-char tabstop */
+
+@import url("fonts/Bariol Regular Webfont/stylesheet.css");
+
+body {
+	font-family:	"bariol_regularregular", sans-serif;
+	background:		black;
+	color:			white;
+	text-align:		center;
+}
+
+.heading {
+	font-size:		3em;
+}
+
+.fixed {
+	font-family:	monospace;
+}
+
+.note {
+	opacity:		0.75;
+	font-style:		oblique;
+}
