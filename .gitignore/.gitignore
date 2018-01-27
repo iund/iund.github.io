@@ -1,0 +1,7 @@
+# Mac OSX generates ._ files for anything on a FAT fs - ignore these
+._*
+.DS_Store
+
+# Also ignore anything that might be "old"
+*.old
+old*
