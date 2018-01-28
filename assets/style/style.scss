@@ -1,0 +1,154 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+/*
+@import url("jekyll-theme-minimal.css");
+@import url("fonts/Bariol Regular Webfont/stylesheet.css");
+*/
+
+body {
+	font-family:	"bariol_regularregular", sans-serif;
+	background:		#0f1f2f;
+	color:			white;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 { color: white; }
+h1 { font-size: 3em; }
+h2 { font-size: 2.8em; }
+h3 { font-size: 2.6em; }
+h4 { font-size: 2.4em; }
+h5 { font-size: 2.2em; }
+h6 { font-size: 2em; }
+
+p {
+	font-size: 1.5em;
+}
+
+p.view {
+	font-style: oblique;
+}
+
+strong { /* bold */
+	color: white;
+}
+
+em { /* italic */
+}
+
+del { /* strikethrough */
+}
+
+a { /* links */
+	color: #7f7fff;
+}
+a:hover {
+	color: #9fcfff;
+}
+
+blockquote {
+  border-left:3px solid #7f7f8f;
+  margin: 0, 0.5em, 0, 0.5em;
+  background: #1f2f3f;
+}
+
+/* tables */
+table {
+	font-size: 1.25em;
+}
+
+th {
+	color: white;
+	font-weight: 700;
+}
+th, td {
+  text-align:left;
+  padding:5px 10px;
+  border-bottom:1px solid #7f7f7f;
+}
+
+td code {
+	font-size: 0.8em;	
+}
+
+code {
+	font-family: monospace; /* duh */
+	color: #ffffff;
+}
+
+pre.highlight {
+	background: #2f3f4f;
+}
+
+.highlight .kd {
+	color: #ffffff;
+}
+
+.highlight .o {
+	color: #ffffff;
+}
+
+.highlight .k {
+	color: #ffffff;
+}
+
+.highlight .kc {
+	color: #ffffff;
+}
+/* headings */
+/*header a h1 {
+	font-size: 3em;
+}
+*/
+header p {
+	font-weight: 700;
+}
+
+header ul { /* download boxes */
+	background: #3f5f7f;
+}
+
+header ul li {
+	text-align: left;
+	font-size: 1em;
+}
+
+header ul li:hover {
+	background: #070f17;
+}
+
+header ul li a {
+	color: white;
+	font-size: 1em;
+}
+header ul a:hover, header ul a:focus {
+	color: white;
+}
+header ul li a strong {
+	color: white;
+}
+
+li {
+	font-size: 16pt;
+}
+
+hr {
+	height: 2px;
+}
+
+/* misc */
+
+.heading {
+	font-size:		3em;
+}
+
+.fixed {
+	font-family:	monospace;
+}
+
+.note {
+	opacity:		0.75;
+	font-style:		oblique;
+}
