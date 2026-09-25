@@ -40,6 +40,7 @@ layout: null
 		section > h2, .file-head { border-bottom: 1px solid var(--line); padding-bottom: 0.2em; }
 		.file-head { align-items: flex-end; margin-bottom: 0.8em; }
 		.file-head h2 { margin: 0.4em 0 0; }
+		h1 .tag { font-size: 0.45em; vertical-align: middle; }
 		.tag { font-size: 0.75em; border: 1px solid currentColor; border-radius: 3px; padding: 0 0.3em; }
 		.success { color: var(--ok); } .failure { color: var(--bad); } .other { color: var(--run); }
 		pre { background: var(--raise); padding: 1em; overflow-x: auto; }
@@ -68,7 +69,7 @@ layout: null
 <div class="layout">
 	<nav>
 		<h2>Repositories</h2>
-		{% for r in site.data.repos %}<a href="#repo/{{ r.name }}"><span class="line">{{ r.name }} {% if r.fork %}<span class="tag">fork</span>{% endif %}{% if r.description %}<span class="desc"> {{ r.description | xml_escape }}</span>{% endif %}</span><small>{{ r.language }}{% if r.stargazers_count > 0 %} ★ {{ r.stargazers_count }}{% endif %}</small></a>
+		{% for r in site.data.repos %}<a href="#repo/{{ r.name }}"><span class="line">{{ r.name }}{% if r.description %}<span class="desc"> {{ r.description | xml_escape }}</span>{% endif %}</span><small>{{ r.language }}{% if r.stargazers_count > 0 %} ★ {{ r.stargazers_count }}{% endif %}</small></a>
 		{% endfor %}
 		<h2>Gists</h2>
 		{% for g in site.data.gists %}<a href="#gist/{{ g.id }}"><span class="line">{{ g.description | default: g.files[0].filename | xml_escape }}</span></a>
@@ -79,7 +80,7 @@ layout: null
 		<article id="repo-{{ r.name }}" hidden>
 			<div class="head">
 				<div>
-					<h1>{{ r.name }}</h1>
+					<h1>{{ r.name }}{% if r.fork %} <span class="tag">fork</span>{% endif %}</h1>
 					<p>{{ r.description | xml_escape }}</p>
 					{% if r.homepage and r.homepage != "" %}<p><a href="{{ r.homepage }}">{{ r.homepage }}</a></p>{% endif %}
 				</div>
