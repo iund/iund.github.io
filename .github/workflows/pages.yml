@@ -1,0 +1,47 @@
+name: Pages
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash _scripts/fetch-data.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Commit data if changed
+        run: |
+          if [ -n "$(git status --porcelain _data)" ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add _data
+            git commit -m 'Update repo and gist data'
+            git push
+          fi
+      - uses: actions/jekyll-build-pages@v1
+      - uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

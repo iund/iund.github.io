@@ -1,10 +1,154 @@
+---
+layout: null
+---
 <!DOCTYPE html>
-<html><head>
+<html lang="en"><head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="light dark">
 	<link rel="stylesheet" type="text/css" href="stylesheet.css"/>
-	<title>New Folder</title>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/iosevka@5.3.0/400.css">
+	<title>{{ site.github.owner_name | default: "iund" }}</title>
+	<style>
+		:root {
+			color-scheme: dark;
+			--main: #0f1f2f; --nav: #070f17; --line: #3f5f7f; --active: #3f5f7f; --raise: #1f2f3f;
+			--text: #ffffff; --dim: #9fb3c6; --link: #9fcfff;
+			--ok: #7fdf7f; --bad: #ff7f7f; --run: #dfcf7f;
+		}
+		@media (prefers-color-scheme: light) {
+			:root {
+				color-scheme: light;
+				--main: #f6f9fc; --nav: #e9eff5; --line: #b4c5d6; --active: #cbdaea; --raise: #e2e9f0;
+				--text: #0f1f2f; --dim: #50657a; --link: #1d5aa6;
+				--ok: #1e7a3c; --bad: #b3261e; --run: #856a00;
+			}
+		}
+		body { margin: 0; text-align: left; background: var(--main); color: var(--text); }
+		a { color: var(--link); }
+		.layout { display: grid; grid-template-columns: 280px 1fr; height: 100vh; }
+		nav { overflow-y: auto; background: var(--nav); padding: 1em; }
+		nav h2 { font-size: 1.1em; color: var(--dim); margin: 1.2em 0 0.4em; }
+		nav a { display: block; padding: 0.35em 0.5em; border-radius: 4px; color: var(--text); text-decoration: none; }
+		nav a:hover { background: var(--raise); }
+		nav a.active { background: var(--active); }
+		nav small, nav .desc, .muted { color: var(--dim); }
+		nav .line { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		main { overflow-y: auto; padding: 1.5em 2em; }
+		main h1 { margin: 0 0 0.2em; }
+		section { margin: 2em 0; }
+		section > h2 { border-bottom: 1px solid var(--line); padding-bottom: 0.2em; }
+		.tag { font-size: 0.75em; border: 1px solid currentColor; border-radius: 3px; padding: 0 0.3em; }
+		.success { color: var(--ok); } .failure { color: var(--bad); } .other { color: var(--run); }
+		pre { background: var(--raise); padding: 1em; overflow-x: auto; }
+		pre, code { font-family: "Iosevka", monospace; font-feature-settings: "ss16"; }
+		pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+		.markdown-body img { max-width: 100%; }
+		.markdown-body .anchor { display: none; }
+		.markdown-body table { border-collapse: collapse; }
+		.markdown-body td, .markdown-body th { border: 1px solid var(--line); padding: 0.3em 0.6em; }
+		footer { margin-top: 3em; font-size: 0.8em; }
+		@media (max-width: 700px) {
+			.layout { grid-template-columns: 1fr; height: auto; }
+			nav { max-height: 40vh; }
+			main { padding: 1em; }
+		}
+	</style>
 </head><body>
-	<div class="heading">New Folder</div>
-	<p class="fixed">Nothing to see here... yet!</p>
-	<p class="note">Watch this space...</p>
+<div class="layout">
+	<nav>
+		<h2>Repositories</h2>
+		{% for r in site.data.repos %}<a href="#repo/{{ r.name }}"><span class="line">{{ r.name }} {% if r.fork %}<span class="tag">fork</span>{% endif %}{% if r.description %}<span class="desc"> {{ r.description | xml_escape }}</span>{% endif %}</span><small>{{ r.language }}{% if r.stargazers_count > 0 %} ★ {{ r.stargazers_count }}{% endif %}</small></a>
+		{% endfor %}
+		<h2>Gists</h2>
+		{% for g in site.data.gists %}<a href="#gist/{{ g.id }}"><span class="line">{{ g.description | default: g.files[0].filename | xml_escape }}</span></a>
+		{% endfor %}
+	</nav>
+	<main>
+		{% for r in site.data.repos %}
+		<article id="repo-{{ r.name }}" hidden>
+			<h1>{{ r.name }}</h1>
+			<p>{{ r.description | xml_escape }}</p>
+			<p><a href="{{ r.html_url }}">View on GitHub</a>{% if r.homepage and r.homepage != "" %} · <a href="{{ r.homepage }}">{{ r.homepage }}</a>{% endif %}</p>
+			<section class="releases">
+				<h2>Releases</h2>
+				<ul>{% for rel in r.releases %}
+					<li><a href="{{ rel.html_url }}">{{ rel.name | default: rel.tag_name | xml_escape }}</a> <span class="muted">{{ rel.published_at | date: "%Y-%m-%d" }}</span>{% for a in rel.assets %} · <a href="{{ a.browser_download_url }}">{{ a.name }}</a>{% endfor %}</li>
+				{% else %}<li class="muted">No releases</li>{% endfor %}</ul>
+			</section>
+			<section class="actions">
+				<h2>Actions</h2>
+				<ul><li class="muted">Loading…</li></ul>
+				<a href="{{ r.html_url }}/actions">All workflow runs</a>
+			</section>
+			<section class="markdown-body">
+				<h2>README</h2>
+				{% if r.readme != "" %}{{ r.readme }}{% else %}<p class="muted">No README</p>{% endif %}
+			</section>
+		</article>
+		{% endfor %}
+		{% for g in site.data.gists %}
+		<article id="gist-{{ g.id }}" hidden>
+			<h1>{{ g.description | default: g.files[0].filename | xml_escape }}</h1>
+			<p><a href="{{ g.html_url }}">View on GitHub</a> <span class="muted">updated {{ g.updated_at | date: "%Y-%m-%d" }}</span></p>
+			{% for f in g.files %}
+			<section>
+				<h2>{{ f.filename }} <small class="muted">{{ f.language }}</small></h2>
+				<pre class="wrap" data-src="{{ f.raw_url }}">Loading…</pre>
+			</section>
+			{% endfor %}
+		</article>
+		{% endfor %}
+		<footer class="muted">Data updated {{ site.time | date: "%Y-%m-%d %H:%M UTC" }}</footer>
+	</main>
+</div>
+<script>
+const USER = '{{ site.github.owner_name | default: "iund" }}';
+const loaded = {};
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+async function live(name, art) {
+	const get = p => fetch(`https://api.github.com/repos/${USER}/${name}/${p}`).then(r => r.ok ? r.json() : Promise.reject(r));
+	const actions = art.querySelector('.actions ul');
+	try {
+		const [rels, runs] = await Promise.all([get('releases?per_page=5'), get('actions/runs?per_page=10')]);
+		art.querySelector('.releases ul').innerHTML = rels.map(r =>
+			`<li><a href="${esc(r.html_url)}">${esc(r.name || r.tag_name)}</a> <span class="muted">${esc((r.published_at || '').slice(0, 10))}</span>` +
+			r.assets.map(a => ` · <a href="${esc(a.browser_download_url)}">${esc(a.name)}</a>`).join('') + '</li>'
+		).join('') || '<li class="muted">No releases</li>';
+		actions.innerHTML = runs.workflow_runs.map(w => {
+			const state = w.conclusion || w.status;
+			const cls = state === 'success' ? 'success' : state === 'failure' ? 'failure' : 'other';
+			return `<li><span class="tag ${cls}">${esc(state)}</span> <a href="${esc(w.html_url)}">${esc(w.name)}</a> ` +
+				`<span class="muted">${esc(w.head_branch)} · ${esc(w.created_at.slice(0, 10))}</span></li>`;
+		}).join('') || '<li class="muted">No workflow runs</li>';
+	} catch (r) {
+		const reset = r.headers && r.headers.get('x-ratelimit-reset');
+		actions.innerHTML = '<li class="muted">Live data unavailable' +
+			(reset ? ` (rate limit resets ${new Date(reset * 1000).toLocaleTimeString()})` : '') + '</li>';
+	}
+}
+
+function show() {
+	const first = document.querySelector('nav a');
+	const hash = location.hash.slice(1) || (first && first.getAttribute('href').slice(1));
+	const m = hash && hash.match(/^(repo|gist)\/(.+)$/);
+	if (!m) return;
+	const art = document.getElementById(`${m[1]}-${decodeURIComponent(m[2])}`);
+	if (!art) return;
+	document.querySelectorAll('main > article').forEach(a => a.hidden = a !== art);
+	document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + hash));
+	document.querySelector('main').scrollTop = 0;
+	if (loaded[hash]) return;
+	loaded[hash] = true;
+	if (m[1] === 'repo') live(decodeURIComponent(m[2]), art);
+	else art.querySelectorAll('pre[data-src]').forEach(pre =>
+		fetch(pre.dataset.src).then(r => r.ok ? r.text() : Promise.reject())
+			.then(t => pre.textContent = t, () => pre.innerHTML = `Could not load file. <a href="${esc(pre.dataset.src)}">Open raw</a>`));
+}
+
+addEventListener('hashchange', show);
+show();
+</script>
 </body>
 </html>
