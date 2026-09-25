@@ -6,7 +6,7 @@ T=$(mktemp -d)
 mkdir -p _data
 
 gh api --paginate "users/$U/repos?per_page=100" \
-	--jq '.[] | {name, description, html_url, homepage, language, stargazers_count, fork}' > "$T/repos"
+	--jq '.[] | {name, description, html_url, ssh_url, clone_url, default_branch, homepage, language, stargazers_count, fork}' > "$T/repos"
 while read -r repo <&3; do
 	r=$(jq -r .name <<<"$repo")
 	gh api -H 'Accept: application/vnd.github.html+json' "repos/$U/$r/readme" > "$T/readme" 2>/dev/null || : > "$T/readme"
