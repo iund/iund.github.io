@@ -20,4 +20,4 @@ done 3< "$T/repos" | jq -s . > _data/repos.json
 
 # Gist endpoints reject GITHUB_TOKEN, so list anonymously (one call); the page loads file contents from raw_url.
 curl -sf "https://api.github.com/users/$U/gists?per_page=100" \
-	| jq 'map({id, description, html_url, updated_at, files: [.files[] | {filename, language, raw_url}]})' > _data/gists.json
+	| jq 'map({id, owner: .owner.login, description, html_url, updated_at, files: [.files[] | {filename, language, raw_url}]})' > _data/gists.json
