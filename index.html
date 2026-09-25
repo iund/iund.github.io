@@ -70,15 +70,17 @@ layout: null
 			<h1>{{ r.name }}</h1>
 			<p>{{ r.description | xml_escape }}</p>
 			<p><a href="{{ r.html_url }}">View on GitHub</a>{% if r.homepage and r.homepage != "" %} · <a href="{{ r.homepage }}">{{ r.homepage }}</a>{% endif %}</p>
-			<section class="releases">
+			<section>
 				<h2>Releases</h2>
 				<ul>{% for rel in r.releases %}
 					<li><a href="{{ rel.html_url }}">{{ rel.name | default: rel.tag_name | xml_escape }}</a> <span class="muted">{{ rel.published_at | date: "%Y-%m-%d" }}</span>{% for a in rel.assets %} · <a href="{{ a.browser_download_url }}">{{ a.name }}</a>{% endfor %}</li>
 				{% else %}<li class="muted">No releases</li>{% endfor %}</ul>
 			</section>
-			<section class="actions">
+			<section>
 				<h2>Actions</h2>
-				<ul><li class="muted">Loading…</li></ul>
+				<ul>{% for w in r.runs %}{% assign st = w.conclusion | default: w.status %}
+					<li><span class="tag {% if st == "success" %}success{% elsif st == "failure" %}failure{% else %}other{% endif %}">{{ st }}</span> <a href="{{ w.html_url }}">{{ w.name | xml_escape }}</a> <span class="muted">{{ w.head_branch | xml_escape }} · {{ w.created_at | date: "%Y-%m-%d" }}</span></li>
+				{% else %}<li class="muted">No workflow runs</li>{% endfor %}</ul>
 				<a href="{{ r.html_url }}/actions">All workflow runs</a>
 			</section>
 			<section class="markdown-body">
@@ -94,7 +96,7 @@ layout: null
 			{% for f in g.files %}
 			<section>
 				<h2>{{ f.filename }} <small class="muted">{{ f.language }}</small></h2>
-				<pre class="wrap" data-src="{{ f.raw_url }}">Loading…</pre>
+				<pre class="wrap">{{ f.content | xml_escape }}</pre>
 			</section>
 			{% endfor %}
 		</article>
@@ -103,32 +105,6 @@ layout: null
 	</main>
 </div>
 <script>
-const USER = '{{ site.github.owner_name | default: "iund" }}';
-const loaded = {};
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-
-async function live(name, art) {
-	const get = p => fetch(`https://api.github.com/repos/${USER}/${name}/${p}`).then(r => r.ok ? r.json() : Promise.reject(r));
-	const actions = art.querySelector('.actions ul');
-	try {
-		const [rels, runs] = await Promise.all([get('releases?per_page=5'), get('actions/runs?per_page=10')]);
-		art.querySelector('.releases ul').innerHTML = rels.map(r =>
-			`<li><a href="${esc(r.html_url)}">${esc(r.name || r.tag_name)}</a> <span class="muted">${esc((r.published_at || '').slice(0, 10))}</span>` +
-			r.assets.map(a => ` · <a href="${esc(a.browser_download_url)}">${esc(a.name)}</a>`).join('') + '</li>'
-		).join('') || '<li class="muted">No releases</li>';
-		actions.innerHTML = runs.workflow_runs.map(w => {
-			const state = w.conclusion || w.status;
-			const cls = state === 'success' ? 'success' : state === 'failure' ? 'failure' : 'other';
-			return `<li><span class="tag ${cls}">${esc(state)}</span> <a href="${esc(w.html_url)}">${esc(w.name)}</a> ` +
-				`<span class="muted">${esc(w.head_branch)} · ${esc(w.created_at.slice(0, 10))}</span></li>`;
-		}).join('') || '<li class="muted">No workflow runs</li>';
-	} catch (r) {
-		const reset = r.headers && r.headers.get('x-ratelimit-reset');
-		actions.innerHTML = '<li class="muted">Live data unavailable' +
-			(reset ? ` (rate limit resets ${new Date(reset * 1000).toLocaleTimeString()})` : '') + '</li>';
-	}
-}
-
 function show() {
 	const first = document.querySelector('nav a');
 	const hash = location.hash.slice(1) || (first && first.getAttribute('href').slice(1));
@@ -139,12 +115,6 @@ function show() {
 	document.querySelectorAll('main > article').forEach(a => a.hidden = a !== art);
 	document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + hash));
 	document.querySelector('main').scrollTop = 0;
-	if (loaded[hash]) return;
-	loaded[hash] = true;
-	if (m[1] === 'repo') live(decodeURIComponent(m[2]), art);
-	else art.querySelectorAll('pre[data-src]').forEach(pre =>
-		fetch(pre.dataset.src).then(r => r.ok ? r.text() : Promise.reject())
-			.then(t => pre.textContent = t, () => pre.innerHTML = `Could not load file. <a href="${esc(pre.dataset.src)}">Open raw</a>`));
 }
 
 addEventListener('hashchange', show);

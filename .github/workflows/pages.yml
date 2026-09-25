@@ -2,7 +2,7 @@ name: Pages
 
 on:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '17 */12 * * *'
   push:
     branches: [master]
   workflow_dispatch:
