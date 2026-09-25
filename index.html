@@ -96,7 +96,7 @@ layout: null
 			{% for f in g.files %}
 			<section>
 				<h2>{{ f.filename }} <small class="muted">{{ f.language }}</small></h2>
-				<pre class="wrap">{{ f.content | xml_escape }}</pre>
+				<pre class="wrap" data-src="{{ f.raw_url }}">Loading…</pre>
 			</section>
 			{% endfor %}
 		</article>
@@ -115,6 +115,15 @@ function show() {
 	document.querySelectorAll('main > article').forEach(a => a.hidden = a !== art);
 	document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + hash));
 	document.querySelector('main').scrollTop = 0;
+	if (m[1] === 'gist' && !art.dataset.loaded) {
+		art.dataset.loaded = 1;
+		art.querySelectorAll('pre[data-src]').forEach(pre =>
+			fetch(pre.dataset.src).then(r => r.ok ? r.text() : Promise.reject())
+				.then(t => pre.textContent = t, () => {
+					pre.textContent = 'Could not load file. ';
+					pre.append(Object.assign(document.createElement('a'), { href: pre.dataset.src, textContent: 'Open raw' }));
+				}));
+	}
 }
 
 addEventListener('hashchange', show);
