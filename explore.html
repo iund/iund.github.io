@@ -115,16 +115,16 @@
 		#files > summary::-webkit-details-marker { display: none; }
 		#files > summary::before { content: "▸ "; color: var(--dim); font-size: 0.7em; }
 		#files[open] > summary::before { content: "▾ "; }
-		.crumbs { font-family: "Iosevka", monospace; font-feature-settings: "ss16"; margin-bottom: 0.5em; overflow-wrap: anywhere; }
+		.crumbs { font-family: "Iosevka", monospace; font-feature-settings: "ss16"; font-size-adjust: 0.454; margin-bottom: 0.5em; overflow-wrap: anywhere; }
 		.tree { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: 4px; }
 		.tree li { border-top: 1px solid var(--line); }
 		.tree li:first-child { border-top: 0; }
-		.tree a { display: block; padding: 0.3em 0.7em; color: var(--text); text-decoration: none; font-family: "Iosevka", monospace; font-feature-settings: "ss16"; }
+		.tree a { display: block; padding: 0.3em 0.7em; color: var(--text); text-decoration: none; font-family: "Iosevka", monospace; font-feature-settings: "ss16"; font-size-adjust: 0.454; }
 		.tree a:hover { background: var(--raise); }
 		.filehead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5em; margin: 0.6em 0; }
 
 		pre { background: var(--raise); padding: 1em; overflow-x: auto; }
-		pre, code { font-family: "Iosevka", monospace; font-feature-settings: "ss16"; }
+		pre, code { font-family: "Iosevka", monospace; font-feature-settings: "ss16"; font-size-adjust: 0.454; }
 		pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 		.markdown-body img { max-width: 100%; }
 		.markdown-body .anchor { display: none; }
@@ -164,7 +164,7 @@
 			<div id="disc-list"></div>
 			<p class="note" id="disc-status"></p>
 			<p class="note"><button class="btn" id="disc-more">More suggestions</button></p>
-			<p class="note" id="disc-foot">Tuned in this browser by what you open, star, copy and download. <button class="linkish" id="disc-mix">New mix</button> · <button class="linkish" id="disc-reset">Reset</button> · <button class="linkish" id="consent-open">Storage</button></p>
+			<p class="note" id="disc-foot">Mixes famous projects with small ones, tuned in this browser by what you open, star, copy and download. <button class="linkish" id="disc-mix">New mix</button> · <button class="linkish" id="disc-reset">Reset</button> · <button class="linkish" id="consent-open">Storage</button></p>
 		</details>
 	</nav>
 	<main id="main"></main>
@@ -673,7 +673,7 @@ main.addEventListener('click', async e => {
 // results continue the left pane. Search calls have their own limit and don't use the hourly allowance.
 const HALF_LIFE = 7 * DAY;
 let profile = ls.get('explore-profile', { topics: {}, langs: {}, words: {} });
-const disc = { queries: [], shown: new Set(), items: new Map(), buffer: new Map(), cooc: {}, round: 0, busy: false, I: null };
+const disc = { queries: [], qs: new Map(), shown: new Set(), items: new Map(), buffer: new Map(), cooc: {}, round: 0, slot: 0, busy: false, I: null };
 let dwell = [];
 const decay = e => e.w * Math.pow(0.5, (Date.now() - e.t) / HALF_LIFE);
 const keywords = r => (((r.description || '') + ' ' + r.name.replace(/[-_.]/g, ' ')).toLowerCase().match(/[a-z][a-z\d]{3,}/g) || []).filter(w => !STOP.has(w)).slice(0, 4);
@@ -709,28 +709,47 @@ function interests() {
 // Mix: your top topics (proven, by stars), one lesser topic (by activity), one topic that keeps
 // appearing next to your interests ("new to you"), new repos in your top topic, and now and then
 // a wildcard of what's rising across GitHub.
+// Star ranges: each topic search is pinned to one range, rotating every batch, so the pool always
+// holds famous, mid-sized and tiny projects. Small ranges sort by recent activity to surface live projects.
+const TIERS = {
+	famous: { q: 'stars:>=10000', sort: 'stars', pushed: 365 },
+	popular: { q: 'stars:1000..9999', sort: 'stars', pushed: 365 },
+	solid: { q: 'stars:100..999', sort: 'stars', pushed: 365 },
+	small: { q: 'stars:15..99', sort: 'updated', pushed: 365 },
+	gem: { q: 'stars:3..14', sort: 'updated', pushed: 180 },
+};
+const TIER_ORDER = ['famous', 'gem', 'popular', 'small', 'solid'];
+const PATTERN = ['famous', 'small', 'popular', 'gem', 'solid', 'small', 'popular', 'gem', 'solid', 'famous'];
+const tierOf = n => n >= 10000 ? 'famous' : n >= 1000 ? 'popular' : n >= 100 ? 'solid' : n >= 15 ? 'small' : 'gem';
 function plan() {
 	const I = interests();
 	const ymd = ms => new Date(Date.now() - ms).toISOString().slice(0, 10);
-	const quality = ` stars:>10 pushed:>${ymd(365 * DAY).slice(0, 7)}-01 archived:false`;
 	const lang = I.langs[0] && (!I.langs[1] || I.langs[0][1] > I.langs[1][1] * 1.5) ? I.langs[0][0] : null;
 	const known = new Set(I.topics.map(([t]) => t));
-	const want = [];
-	I.topics.slice(0, 3).forEach(([t], i) => want.push({ q: 'topic:' + t + (i === 0 && lang ? ` language:"${lang}"` : '') + quality, sort: 'stars', why: t }));
-	const pool = I.topics.slice(3, 12);
-	if (pool.length) { const [t] = pool[disc.round % pool.length]; want.push({ q: 'topic:' + t + quality, sort: 'updated', why: t }); }
-	const adj = Object.entries(disc.cooc).filter(([t]) => !known.has(t) && !ls.get('explore-hidden-topics', []).includes(t)).sort((a, b) => b[1] - a[1]);
-	if (adj.length) { const [t] = adj[disc.round % Math.min(3, adj.length)]; want.push({ q: 'topic:' + t + quality, sort: 'stars', why: t + ' (new to you)' }); }
-	if (I.topics.length) want.push({ q: `topic:${I.topics[0][0]} created:>${ymd(120 * DAY)} stars:>5`, sort: 'stars', why: I.topics[0][0], fresh: true });
-	if (want.length < 3 && I.words.length) {
+	const base = [];
+	I.topics.slice(0, 3).forEach(([t], i) => base.push({ q: 'topic:' + t + (i === 0 && lang ? ` language:"${lang}"` : ''), why: t }));
+	const lesser = I.topics.slice(3, 12);
+	if (lesser.length) { const [t] = lesser[disc.round % lesser.length]; base.push({ q: 'topic:' + t, why: t }); }
+	const adj = Object.entries(disc.cooc).filter(([t]) => !known.has(t)).sort((a, b) => b[1] - a[1]);
+	if (adj.length) { const [t] = adj[disc.round % Math.min(3, adj.length)]; base.push({ q: 'topic:' + t, why: t + ' (new to you)' }); }
+	if (base.length < 3 && I.words.length) {
 		const w = I.words.slice(0, 2).map(([x]) => x);
-		want.push({ q: w.join(' ') + ' in:name,description,topics' + (lang ? ` language:"${lang}"` : '') + quality, sort: 'stars', why: w.join(', ') });
-		if (I.words[2]) want.push({ q: I.words[2][0] + ' in:name,description,topics' + quality, sort: 'updated', why: I.words[2][0] });
+		base.push({ q: w.join(' ') + ' in:name,description,topics' + (lang ? ` language:"${lang}"` : ''), why: w.join(', ') });
+		if (I.words[2]) base.push({ q: I.words[2][0] + ' in:name,description,topics', why: I.words[2][0] });
 	}
-	if (!want.length && lang) want.push({ q: `language:"${lang}"` + quality, sort: 'stars', why: lang });
+	if (!base.length && lang) base.push({ q: `language:"${lang}"`, why: lang });
+	const want = base.map((b, i) => {
+		const tier = TIER_ORDER[(disc.round + i) % TIER_ORDER.length], T = TIERS[tier];
+		return { q: `${b.q} ${T.q} pushed:>${ymd(T.pushed * DAY)} archived:false`, sort: T.sort, why: b.why };
+	});
+	if (I.topics.length) want.push({ q: `topic:${I.topics[0][0]} created:>${ymd(120 * DAY)} stars:>5`, sort: 'stars', why: I.topics[0][0], fresh: true });
 	if (!want.length || disc.round % 4 === 3) want.push({ q: `created:>${ymd(30 * DAY)} stars:>50`, sort: 'stars', why: 'rising on GitHub', fresh: true });
-	const old = new Map(disc.queries.map(q => [q.q + q.sort, q]));
-	disc.queries = want.map(w => old.get(w.q + w.sort) || { ...w, page: 1, done: false });
+	// Remember every query's page so a range picks up where it left off when the rotation returns to it.
+	disc.queries = want.map(w => {
+		const key = w.q + ' ' + w.sort;
+		if (!disc.qs.has(key)) disc.qs.set(key, { ...w, page: 1, done: false });
+		return disc.qs.get(key);
+	});
 	disc.I = I;
 }
 function discStatus(t) { $('#disc-status').textContent = t; }
@@ -740,7 +759,7 @@ function caughtUp() {
 	$('#disc-status').innerHTML = `<b>✓ You're all caught up.</b><br>More suggestions after ${at}.`;
 }
 async function discover(reset) {
-	if (reset) { disc.shown.clear(); disc.buffer.clear(); disc.queries = []; disc.cooc = {}; disc.round = 0; $('#disc-list').innerHTML = ''; }
+	if (reset) { disc.shown.clear(); disc.buffer.clear(); disc.qs.clear(); disc.slot = 0; disc.queries = []; disc.cooc = {}; disc.round = 0; $('#disc-list').innerHTML = ''; }
 	await more(3);
 }
 async function more(n) {
@@ -750,8 +769,9 @@ async function more(n) {
 	if (!live.length && !disc.buffer.size) return discStatus(disc.shown.size ? 'That is everything for now. Open or star more repositories to widen the mix.' : 'Open or star a few repositories and suggestions will appear here.');
 	const budget = search.left == null || Date.now() > search.reset ? n : search.left - SEARCH_RESERVE;
 	if (budget <= 0 && !disc.buffer.size) return caughtUp();
-	// Enough carried-over suggestions: show those without searching.
-	n = disc.buffer.size >= 8 ? 0 : Math.max(0, Math.min(n, budget));
+	// Enough carried-over suggestions across enough star ranges: show those without searching.
+	const ranges = new Set([...disc.buffer.values()].map(c => tierOf(c.r.stargazers_count))).size;
+	n = disc.buffer.size >= 8 && ranges >= 4 ? 0 : Math.max(0, Math.min(n, budget));
 	disc.busy = true;
 	discStatus('Finding more…');
 	const off = live.length ? disc.round % live.length : 0;
@@ -784,26 +804,33 @@ async function more(n) {
 	const score = (c, k) => {
 		const topic = (c.r.topics || []).reduce((s, t) => s + Math.max(0, S.topics[t] || 0), 0);
 		const lang = Math.max(0, S.langs[c.r.language] || 0) / 2;
-		return (1 + topic + lang + c.hits) * Math.pow(0.6, seen[k] || 0) + Math.log10(1 + c.r.stargazers_count) * 0.4 + (c.fresh ? 1 : 0) + Math.random();
+		return (1 + topic + lang + c.hits) * Math.pow(0.6, seen[k] || 0) + (c.fresh ? 1 : 0) + Math.random();
 	};
-	// Greedy pick with a penalty for repeating the same reason, so one topic can't take over a batch.
-	const pool = [...cands].filter(([k]) => !skip.has(k) && !disc.shown.has(k)).map(([k, c]) => ({ k, c, s: score(c, k) }));
+	// Fill slots in PATTERN order (famous, small, popular, gem, …), taking the best match in each star range,
+	// with a penalty for repeating the same reason so one topic can't take over a batch.
+	const pool = [...cands].filter(([k]) => !skip.has(k) && !disc.shown.has(k)).map(([k, c]) => ({ k, c, s: score(c, k), tier: tierOf(c.r.stargazers_count) }));
 	const picked = [], used = {};
-	while (picked.length < 10) {
+	while (picked.length < 10 && pool.length) {
+		const want = PATTERN[disc.slot % PATTERN.length];
 		pool.forEach(x => x.adj = x.s * Math.pow(0.5, used[x.c.why[0]] || 0));
 		pool.sort((a, b) => b.adj - a.adj);
-		const i = pool.findIndex(x => (used[x.c.why[0]] || 0) < 4);
+		const ok = x => (used[x.c.why[0]] || 0) < 4;
+		let i = pool.findIndex(x => ok(x) && x.tier === want);
+		if (i < 0) i = pool.findIndex(ok);
 		if (i < 0) break;
 		const [x] = pool.splice(i, 1);
 		used[x.c.why[0]] = (used[x.c.why[0]] || 0) + 1;
 		picked.push(x);
+		disc.slot++;
 	}
-	disc.buffer = new Map(pool.sort((a, b) => b.s - a.s).slice(0, 60).map(x => [x.k, x.c]));
+	// Carry the rest over, keeping up to 15 per star range so later batches stay mixed.
+	const kept = {};
+	disc.buffer = new Map(pool.filter(x => (kept[x.tier] = (kept[x.tier] || 0) + 1) <= 15).map(x => [x.k, x.c]));
 	picked.forEach(({ k, c }) => { disc.shown.add(k); disc.items.set(k, c.r); seen[k] = (seen[k] || 0) + 1; });
 	ls.set('explore-seen', Object.fromEntries(Object.entries(seen).slice(-600)));
 	const isNew = r => r.created_at && Date.now() - Date.parse(r.created_at) < 120 * DAY;
 	$('#disc-list').insertAdjacentHTML('beforeend', picked.map(({ c }) =>
-		`<div class="sug">${repoLink(c.r, true, `${isNew(c.r) ? ' <span class="tag" style="color:var(--ok)">new</span>' : ''} · ${esc(c.why.join(', '))}`)}<button class="x" data-hide="${esc(c.r.full_name)}" title="Not interested">✕</button></div>`).join(''));
+		`<div class="sug">${repoLink(c.r, true, `${c.r.stargazers_count >= 10000 ? ' <span class="tag" style="color:var(--star)">famous</span>' : c.r.stargazers_count < 50 ? ' <span class="tag" style="color:var(--link)">gem</span>' : ''}${isNew(c.r) ? ' <span class="tag" style="color:var(--ok)">new</span>' : ''} · ${esc(c.why.join(', '))}`)}<button class="x" data-hide="${esc(c.r.full_name)}" title="Not interested">✕</button></div>`).join(''));
 	$('#sec-discover summary span:last-child').textContent = disc.shown.size || '';
 	applyFilter(); highlight();
 	disc.busy = false;
