@@ -151,8 +151,8 @@ layout: null
 		<button class="btn" id="token-btn" aria-expanded="false" aria-controls="settings">Token</button>
 	</header>
 	<form id="settings" hidden>
-		<label for="token" title="Raises the API limit from 60 to 5,000 calls an hour and turns on starring and your Starred list. Create a fine-grained token with Public repositories (read-only) access and the account permission Starring: read and write. It is only sent to api.github.com.">Personal access token</label>
-		<input id="token" type="password" autocomplete="off" placeholder="github_pat_…" title="Fine-grained token: Public repositories (read-only), Starring: read and write">
+		<label for="token" title="Raises the API limit from 60 to 5,000 calls an hour, turns on starring and your Starred list, and shows your access to each repository. Create a fine-grained token with Public repositories (read-only) access and the account permission Starring: read and write. To also list your private repositories, choose All repositories with Contents, Metadata and Actions: read-only. It is only sent to api.github.com.">Personal access token</label>
+		<input id="token" type="password" autocomplete="off" placeholder="github_pat_…" title="Fine-grained token: Public repositories (read-only), Starring: read and write. For private repositories: All repositories, Contents, Metadata and Actions: read-only">
 		<button class="btn">Save</button>
 		<button class="btn" type="button" id="token-clear">Clear</button>
 		<p id="token-status"></p>
@@ -187,7 +187,8 @@ layout: null
 // Built data (your profile, repos, gists) comes from the 12-hourly build; everything else is fetched live.
 const SITE = JSON.parse(document.getElementById('site-data').textContent);
 const OWNER = (SITE.user && SITE.user.login) || 'iund';
-const MINE = SITE.repos || [], GISTS = SITE.gists || [];
+const BUILT = SITE.repos || [], GISTS = SITE.gists || [];
+let MINE = BUILT;
 const svg = d => `<svg viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
 const ICON = {
 	eye: svg('<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>'),
@@ -252,7 +253,7 @@ const ls = {
 
 // Trim API objects before caching so storage holds many more of them.
 const slimRepo = r => ({ name: r.name, full_name: r.full_name, owner: { login: r.owner.login, avatar_url: r.owner.avatar_url }, description: r.description, language: r.language,
-	stargazers_count: r.stargazers_count, forks_count: r.forks_count, size: r.size, has_pages: r.has_pages, is_template: r.is_template, parent: r.parent && r.parent.full_name, fork: r.fork, archived: r.archived, topics: r.topics, license: r.license && { spdx_id: r.license.spdx_id },
+	stargazers_count: r.stargazers_count, forks_count: r.forks_count, size: r.size, has_pages: r.has_pages, is_template: r.is_template, parent: r.parent && r.parent.full_name, fork: r.fork, private: r.private, permissions: r.permissions, archived: r.archived, topics: r.topics, license: r.license && { spdx_id: r.license.spdx_id },
 	default_branch: r.default_branch, html_url: r.html_url, ssh_url: r.ssh_url, clone_url: r.clone_url, homepage: r.homepage, pushed_at: r.pushed_at, created_at: r.created_at });
 const slimRelease = x => ({ name: x.name, tag_name: x.tag_name, draft: x.draft, prerelease: x.prerelease, published_at: x.published_at, body_html: x.body_html,
 	assets: x.assets.map(a => ({ name: a.name, size: a.size, download_count: a.download_count, browser_download_url: a.browser_download_url })) });
@@ -274,8 +275,10 @@ function evict() {
 	return aged.length > 0;
 }
 const mem = new Map();
+// Answers with a token can differ (private repos, permissions), so they are cached separately.
+const ckey = (path, accept = JSON_T) => (token ? 'auth ' : '') + accept + ' ' + path;
 function gh(path, { accept = JSON_T, text = false, ttl = HOUR, refresh = false, map = d => d } = {}) {
-	const key = accept + ' ' + path;
+	const key = ckey(path, accept);
 	if (!refresh && mem.has(key)) return mem.get(key);
 	const saved = cacheGet(key);
 	const p = saved && !refresh && Date.now() - saved.t < ttl ? Promise.resolve(saved.d) : request(path, { accept, text, etag: saved && saved.e }).then(res => {
@@ -349,8 +352,9 @@ function parse(input) {
 
 // ---- Left pane ----
 const lic = r => r.license && r.license.spdx_id && r.license.spdx_id !== 'NOASSERTION' ? esc(r.license.spdx_id) : '';
-const repoLink = (r, full, extra = '') => `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${lic(r) ? `<span class="tag">${lic(r)}</span> ` : ''}${esc(r.language || '')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}${extra}</small></a>`;
-const card = r => `<a class="card" href="#${esc(r.full_name)}"><b>${esc(r.full_name)}</b><span class="d">${esc(r.description || '')}</span><small>${esc(r.language || '')}${r.language ? ' · ' : ''}★ ${num(r.stargazers_count)} · updated ${when(r.pushed_at)}</small></a>`;
+const priv = r => r.private ? '<span class="tag">private</span> ' : '';
+const repoLink = (r, full, extra = '') => `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${priv(r)}${lic(r) ? `<span class="tag">${lic(r)}</span> ` : ''}${esc(r.language || '')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}${extra}</small></a>`;
+const card = r => `<a class="card" href="#${esc(r.full_name)}"><b>${esc(r.full_name)}</b><span class="d">${esc(r.description || '')}</span><small>${priv(r)}${esc(r.language || '')}${r.language ? ' · ' : ''}★ ${num(r.stargazers_count)} · updated ${when(r.pushed_at)}</small></a>`;
 const gistTitle = g => g.description || (g.files[0] || {}).filename || g.id;
 const gistCard = g => `<a class="card" href="#gist/${esc(g.id)}"><b>${esc(gistTitle(g))}</b><span class="d">${esc(g.files.map(f => f.filename).join(', '))}</span><small>${[...new Set(g.files.map(f => f.language).filter(Boolean))].map(esc).join(', ')}${g.files.some(f => f.language) ? ' · ' : ''}${g.files.length} file${g.files.length === 1 ? '' : 's'} · updated ${when(g.updated_at)}</small></a>`;
 function fill(sec, items, { title, full, empty, html } = {}) {
@@ -407,6 +411,20 @@ async function loadStars() {
 	} catch (e) { if (!starred) $('[data-sec="stars"] > div').innerHTML = `<p class="note">${esc(failure(e))}</p>`; }
 }
 const isStarred = r => !!starred && starred.list.some(x => same(x.full_name, r.full_name));
+// With your own token, every repo you own (private ones too) joins the built list: 1 call per 100, cached for an hour.
+async function loadMine() {
+	let all = null;
+	if (token && me && isOwner(me)) try {
+		all = [];
+		for (let page = 1; page <= 10; page++) {
+			const part = await gh(`user/repos?affiliation=owner&per_page=100&page=${page}`, { map: d => d.map(slimRepo) });
+			all.push(...part);
+			if (part.length < 100) break;
+		}
+	} catch { all = null; }
+	MINE = all ? all.map(r => { const b = BUILT.find(x => same(x.full_name, r.full_name)); return b ? { ...b, private: r.private, permissions: r.permissions } : r; }) : BUILT;
+	fill('mine', MINE, { title: OWNER, empty: 'No repositories.' });
+}
 
 // ---- Routing ----
 async function route() {
@@ -469,7 +487,7 @@ async function showOwner(owner, n, refresh) {
 	const fresh = [...state.repos].sort((a, b) => (b.pushed_at || '').localeCompare(a.pushed_at || '')).slice(0, 6);
 	main.innerHTML = `<div class="head"><div class="profile"><img src="${avatar(u.avatar_url, 144)}" alt=""><div>
 			<h1>${esc(u.name || u.login)}</h1>
-			<p class="muted">${esc(u.login)} · ${u.type === 'Organization' ? 'organization' : 'user'} · ${num(u.public_repos)} public repositories${u.followers ? ' · ' + num(u.followers) + ' followers' : ''}</p>
+			<p class="muted">${esc(u.login)} · ${u.type === 'Organization' ? 'organization' : 'user'} · ${num(u.public_repos)} public repositories${mine && MINE.some(r => r.private) ? ` · ${MINE.filter(r => r.private).length} private` : ''}${u.followers ? ' · ' + num(u.followers) + ' followers' : ''}</p>
 			${u.bio ? `<p>${esc(u.bio)}</p>` : ''}
 			<p class="muted">${[u.location && esc(u.location), u.blog && ext(/^https?:/.test(u.blog) ? u.blog : 'https://' + u.blog, esc(u.blog))].filter(Boolean).join(' · ')}</p>
 		</div></div>
@@ -515,7 +533,7 @@ function ownerBasis(owner, repos) {
 const whenVisible = (el, fn) => new IntersectionObserver((es, io) => { if (es[0].isIntersecting) { io.disconnect(); fn(); } }).observe(el);
 const built = () => `<p class="muted age">Built into this page ${when(SITE.built)} · rebuilt every 12 hours</p>`;
 function freshness(path) {
-	const t = (cacheGet(JSON_T + ' ' + path) || {}).t;
+	const t = (cacheGet(ckey(path)) || {}).t;
 	return t ? `<p class="muted age">Saved in this browser ${when(t)} · <button class="linkish" id="refresh">refresh</button></p>` : '';
 }
 
@@ -563,7 +581,7 @@ async function showRepo(owner, name, at, n, refresh) {
 	dwell = [20000, 60000].map(ms => setTimeout(() => state.repo === r && learn(r, 1), ms));
 	const sections = ['releases', ...(mine ? ['actions'] : []), 'readme', 'files', ...(mine ? [] : ['similar'])];
 	main.innerHTML = `<div class="head"><div>
-			<h1>${esc(r.name)}${r.fork ? ` <a class="tag" href="#${r.parent ? esc(r.parent) : '~parent/' + esc(r.full_name)}" title="${r.parent ? 'Fork of ' + esc(r.parent) : 'Open the repository this is a fork of'}">fork</a>` : ''}${r.is_template ? ' <span class="tag">template</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}</h1>
+			<h1>${esc(r.name)}${r.fork ? ` <a class="tag" href="#${r.parent ? esc(r.parent) : '~parent/' + esc(r.full_name)}" title="${r.parent ? 'Fork of ' + esc(r.parent) : 'Open the repository this is a fork of'}">fork</a>` : ''}${r.is_template ? ' <span class="tag">template</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}${r.private ? ' <span class="tag">private</span>' : ''}</h1>
 			${r.description ? `<p>${esc(r.description)}</p>` : ''}
 			<p class="muted">${[
 				`<a href="#${esc(r.owner.login)}">${r.owner.avatar_url ? `<img class="av" src="${avatar(r.owner.avatar_url, 40)}" alt="">` : ''}${esc(r.owner.login)}</a>`,
@@ -576,6 +594,7 @@ async function showRepo(owner, name, at, n, refresh) {
 				r.homepage ? ext(r.homepage, esc(r.homepage.replace(/^https?:\/\//, ''))) : '',
 				r.has_pages && !(r.homepage || '').startsWith(pagesUrl(r).replace(/\/$/, '')) ? ext(pagesUrl(r), 'site', 'GitHub Pages site') : '',
 			].filter(Boolean).join(' · ')}</p>
+			${token ? `<p class="muted" id="access">${accessHTML(r)}</p>` : ''}
 			${r.topics && r.topics.length ? `<div class="topics">${r.topics.map(t => `<a href="#~topic/${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
 		</div>
 		<div class="clone">
@@ -588,21 +607,23 @@ async function showRepo(owner, name, at, n, refresh) {
 			${sections.map(s => btn(s, s, `data-jump="${s}" title="Jump to ${s}"`)).join('')}
 		</div></div>
 		<section id="releases"><h2>Releases</h2><p class="muted">Loading…</p></section>
-		${mine ? `<section id="actions"><h2>Actions</h2>${runsHTML(r)}</section>` : ''}
+		${mine ? '<section id="actions"><h2>Actions</h2><p class="muted">Loading…</p></section>' : ''}
 		<section id="readme" class="markdown-body"><h2>README</h2><p class="muted">Loading…</p></section>
 		<details id="files"><summary>Files</summary><div></div></details>
 		${mine ? '' : '<section id="similar"><h2>Similar repositories</h2></section>'}
-		<div id="age">${mine ? built() : ''}</div>`;
+		<div id="age">${r.runs ? built() : ''}</div>`;
 	if (token) setStar(isStarred(r));
-	$('#files').addEventListener('toggle', e => e.target.open && !state.files && openFiles({ kind: 'tree', ref: r.default_branch, path: '' }));
+	if (token && !r.permissions) gh(`repos/${r.full_name}`, { refresh, map: d => d && slimRepo(d) }).then(x => n === seq && x && ($('#access').innerHTML = accessHTML(x)), () => {});
+	$('#files').addEventListener('toggle', e => e.target.open && !e.target.querySelector('div').innerHTML && openFiles({ kind: 'tree', ref: r.default_branch, path: '' }));
 	if (at) openFiles(at, true);
 	await Promise.all([
 		part('releases', 'Releases', n, async () => releasesHTML(r, r.releases || await gh(`repos/${r.full_name}/releases?per_page=6`, { accept: HTML_T, refresh, map: d => d && d.map(slimRelease) }))),
 		part('readme', 'README', n, () => readmeHTML(r, refresh)),
+		mine && part('actions', 'Actions', n, async () => runsHTML(r, r.runs || await gh(`repos/${r.full_name}/actions/runs?per_page=10`, { refresh, map: d => d && d.workflow_runs.map(w => ({ name: w.name, head_branch: w.head_branch, status: w.status, conclusion: w.conclusion, created_at: w.created_at, html_url: w.html_url })) }))),
 	]);
 	// Similar repositories load when scrolled into view (search calls have their own per-minute limit).
 	if (!mine && n === seq) whenVisible($('#similar'), () => loadSimilar(r, n, refresh));
-	if (n === seq && !mine) $('#age').innerHTML = freshness(`repos/${r.full_name}/releases?per_page=6`);
+	if (n === seq && !r.runs) $('#age').innerHTML = freshness(`repos/${r.full_name}/releases?per_page=6`);
 }
 // Fill a section from an async HTML builder, showing any error in place.
 async function part(id, title, n, build) {
@@ -621,9 +642,20 @@ function setStar(on) {
 	b.querySelector('span').textContent = on ? 'starred' : 'star';
 	b.title = on ? 'Remove from your stars' : 'Star (bookmark) this repository';
 }
-function runsHTML(r) {
+// With a token, GitHub says what you may do in each repo (free in lists fetched with the token, else 1 call).
+const LEVELS = [['admin', 'admin'], ['maintain', 'maintain'], ['push', 'write'], ['triage', 'triage'], ['pull', 'read']];
+function accessHTML(r) {
+	const p = r.permissions;
+	if (!p) return '';
+	return `Your access: <b>${(LEVELS.find(([k]) => p[k]) || [, 'none'])[1]}</b>` + [
+		p.admin && ext(r.html_url + '/settings', 'settings'),
+		p.push && ext(r.html_url + '/releases/new', 'new release'),
+		p.push && ext('https://github.dev/' + r.full_name, 'edit', 'Open in github.dev'),
+	].filter(Boolean).map(x => ' · ' + x).join('');
+}
+function runsHTML(r, runs) {
 	const cls = s => s === 'success' ? 'ok' : s === 'failure' ? 'bad' : 'run';
-	return `<ul>${(r.runs || []).map(w => { const s = w.conclusion || w.status; return `<li><span class="tag ${cls(s)}">${esc(s)}</span> ${ext(w.html_url, esc(w.name))} <span class="muted">${esc(w.head_branch)} · ${when(w.created_at)}</span></li>`; }).join('') || '<li class="muted">No workflow runs</li>'}</ul>${ext(r.html_url + '/actions', 'All workflow runs')}`;
+	return `<ul>${(runs || []).map(w => { const s = w.conclusion || w.status; return `<li><span class="tag ${cls(s)}">${esc(s)}</span> ${ext(w.html_url, esc(w.name))} <span class="muted">${esc(w.head_branch)} · ${when(w.created_at)}</span></li>`; }).join('') || '<li class="muted">No workflow runs</li>'}</ul>${ext(r.html_url + '/actions', 'All workflow runs')}`;
 }
 function releasesHTML(r, list) {
 	const rels = (list || []).filter(x => !x.draft);
@@ -705,12 +737,12 @@ async function openFiles(at, scroll) {
 	const crumbs = `<div class="crumbs">${link('tree', '', esc(r.name))}${segs.map((s, i) => ' / ' + link(i === segs.length - 1 && at.kind === 'blob' ? 'blob' : 'tree', segs.slice(0, i + 1).join('/'), esc(s))).join('')} <span class="muted">(${esc(ref)})</span></div>`;
 	if (at.kind === 'blob') {
 		const item = tree.find(x => x.path === path), name = segs[segs.length - 1];
-		const rawUrl = `https://raw.githubusercontent.com/${r.full_name}/${encodeURIComponent(ref)}/${segs.map(encodeURIComponent).join('/')}`;
+		const rawUrl = r.private ? `https://api.github.com/repos/${r.full_name}/contents/${segs.map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}` : `https://raw.githubusercontent.com/${r.full_name}/${encodeURIComponent(ref)}/${segs.map(encodeURIComponent).join('/')}`;
 		box.innerHTML = crumbs + `<div class="filehead"><span class="muted">${item ? size(item.size) : ''}</span><div class="clone">
 			${btn('copy', 'copy', 'data-copy-file title="Copy contents"')}
 			<a href="${esc(rawUrl)}" download="${esc(name)}" title="Download ${esc(name)}">${ICON.dl}download</a>
 			${ext(`${r.html_url}/blob/${ref}/${path}`, ICON.eye + 'github', 'View on GitHub')}</div></div><div class="file-body"></div>`;
-		loadFile(box.querySelector('.file-body'), rawUrl, name, item && item.size);
+		loadFile(box.querySelector('.file-body'), rawUrl, name, item && item.size, r.private && { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github.raw+json' });
 	} else {
 		const prefix = path ? path + '/' : '';
 		const kids = tree.filter(x => x.path.startsWith(prefix) && !x.path.slice(prefix.length).includes('/'))
@@ -720,17 +752,20 @@ async function openFiles(at, scroll) {
 	}
 	if (scroll) det.scrollIntoView({ block: 'start' });
 }
-// Shows a raw file (free); once loaded, the download link points at the loaded text so it saves under its own name.
-function loadFile(body, url, name, bytes) {
-	const dl = body.parentNode.querySelector('a[download]');
-	if (/\.(png|jpe?g|gif|svg|webp|ico|bmp)$/i.test(name)) return body.innerHTML = `<img src="${esc(url)}" alt="${esc(name)}" style="max-width:100%">`;
+// Shows a raw file (free; private repos go through the contents API with the token, 1 call); once loaded,
+// the download link points at the loaded file so it saves under its own name.
+function loadFile(body, url, name, bytes, headers) {
+	const dl = body.parentNode.querySelector('a[download]'), img = /\.(png|jpe?g|gif|svg|webp|ico|bmp)$/i.test(name);
+	if (img && !headers) return body.innerHTML = `<img src="${esc(url)}" alt="${esc(name)}" style="max-width:100%">`;
 	if (bytes > 1048576) return body.innerHTML = '<p class="muted">This file is over 1 MB. Use download or view it on GitHub.</p>';
 	body.innerHTML = '<p class="muted">Loading…</p>';
-	fetch(url).then(x => x.ok ? x.text() : Promise.reject()).then(t => {
+	fetch(url, headers ? { headers } : {}).then(x => x.ok ? x.blob() : Promise.reject()).then(async b => {
+		dl.href = URL.createObjectURL(b);
+		if (img) return body.innerHTML = `<img src="${dl.href}" alt="${esc(name)}" style="max-width:100%">`;
+		const t = await b.text();
 		if (/\u0000/.test(t.slice(0, 8000))) return body.innerHTML = '<p class="muted">Binary file. Use download.</p>';
 		body.innerHTML = '<pre class="wrap"></pre>';
 		body.firstChild.textContent = t;
-		dl.href = URL.createObjectURL(new Blob([t], { type: 'text/plain' }));
 	}, () => body.innerHTML = `<p class="muted">Could not load this file. <a href="${esc(url)}">Open raw</a></p>`);
 }
 
@@ -984,7 +1019,7 @@ async function useToken(t) {
 	tokenLabel();
 	if (token) { $('#settings').hidden = true; $('#token-btn').setAttribute('aria-expanded', 'false'); }
 	state.owner = null; state.repo = null;
-	loadStars(); rate(); route();
+	loadStars(); rate(); loadMine().then(route);
 }
 $('#settings').addEventListener('submit', e => { e.preventDefault(); const t = $('#token').value.trim(); $('#token').value = ''; if (t) useToken(t); });
 $('#token-clear').addEventListener('click', () => useToken(''));
@@ -993,14 +1028,14 @@ $('#consent-no').addEventListener('click', () => setConsent('no'));
 $$('.consent-open').forEach(b => b.addEventListener('click', () => $('#consent').hidden = false));
 if (!consent) $('#consent').hidden = false;
 
-fill('mine', MINE, { title: OWNER, empty: 'No public repositories.' });
+fill('mine', MINE, { title: OWNER, empty: 'No repositories.' });
 fill('gists', GISTS, { empty: 'No public gists.', html: g => `<a href="#gist/${esc(g.id)}" data-full="gist/${esc(g.id)}"><span class="line">${esc(gistTitle(g))}</span></a>` });
 fill('recent', ls.get('explore-recent', []), { full: true, empty: 'Repositories you open appear here.' });
 addEventListener('hashchange', route);
 fillHistory();
 tokenLabel();
 rate();
-Promise.allSettled([loadStars(), route()]).then(() => discover());
+Promise.allSettled([loadStars(), loadMine().then(route)]).then(() => discover());
 </script>
 </body>
 </html>

@@ -24,6 +24,9 @@ const API = {
 	'search/repositories': { total_count: 2, items: [repo('big/famous', { stargazers_count: 50000 }), repo('tiny/gem', { stargazers_count: 5 })] },
 	'users/many': { login: 'many', name: 'Many Repos', type: 'User', public_repos: 105, avatar_url: 'https://avatars.githubusercontent.com/u/2?v=4', html_url: 'https://github.com/many' },
 	'users/many/repos': u => { const pg = +(u.searchParams.get('page') || 1); return MANY.slice((pg - 1) * 100, pg * 100); },
+	user: () => ({ login: data.user.login }),
+	'user/repos': () => [{ ...data.repos[0], permissions: { admin: true, push: true, pull: true } }, repo(`${data.user.login}/secret`, { private: true, permissions: { admin: true, push: true, pull: true } })],
+	[`repos/${OTHER}`]: { ...repo(OTHER), permissions: { pull: true } },
 	rate_limit: { resources: { core: { remaining: 60, limit: 60, reset: 2e9 }, search: { remaining: 10, limit: 10, reset: 2e9 } } },
 };
 
@@ -205,6 +208,27 @@ test("an owner's repos page in as you scroll, then Similar appears at the end", 
 	await scroll();
 	await page.waitForSelector('#similar .card');
 	assert.ok((await page.$$eval('#similar .card b', bs => bs.map(b => b.textContent))).every(n => !n.startsWith('many/')), 'Similar leaves out the owner');
+});
+
+test('your own token lists private repos and shows your access', async t => {
+	if (!data.repos.length) return t.skip('no repos');
+	const me = data.user.login;
+	await page.addInitScript(me => Object.entries({ 'explore-consent': 'yes', 'explore-token': '"tok"', 'explore-me': JSON.stringify(me) }).forEach(([k, v]) => localStorage.setItem(k, v)), me);
+	API[`repos/${me}/secret/actions/runs`] = { workflow_runs: [{ name: 'CI', head_branch: 'main', status: 'completed', conclusion: 'success', created_at: '2026-01-01T00:00:00Z', html_url: 'https://github.com/x' }] };
+	API[`repos/${me}/secret/git/trees/main`] = { truncated: false, tree: [{ path: 'a.txt', type: 'blob', size: 5 }] };
+	API[`repos/${me}/secret/contents/a.txt`] = 'hello';
+	await open(me);
+	assert.equal(await page.locator('[data-sec="mine"] a').count(), 2);
+	assert.match(await page.textContent('[data-sec="mine"]'), /secret.*private/s);
+	await open(`${me}/secret/blob/main/a.txt`);
+	assert.match(await page.textContent('main h1'), /secret private/);
+	assert.match(await page.textContent('#access'), /Your access: admin · settings · new release · edit/);
+	assert.match(await page.textContent('#actions'), /success CI/);
+	assert.match(await page.textContent('#files .file-body pre'), /hello/);
+	await open(OTHER);
+	await page.waitForSelector('#access:has-text("read")');
+	assert.equal(await page.textContent('#access'), 'Your access: read');
+	assert.equal(calls.filter(c => c === 'user/repos').length, 1);
 });
 
 test('pasted GitHub URLs route to the right view', async () => {
