@@ -237,7 +237,8 @@ test('your own token lists private repos and turns your access into buttons', as
 	API[`repos/${me}/secret/contents/.github/workflows/pages.yml`] = 'on:\n  workflow_dispatch:\n';
 	API[`repos/${me}/secret/contents/.github/workflows/push.yml`] = 'on: push\n';
 	API[`repos/${me}/secret/actions/workflows/7/dispatches`] = {};
-	API[`repos/${me}/secret`] = (u, req) => repo(`${me}/secret`, { private: true, description: req.postDataJSON().description });
+	const patches = [];
+	API[`repos/${me}/secret`] = (u, req) => (patches.push(req.postDataJSON()), repo(`${me}/secret`, { private: true, has_issues: true, has_discussions: false, description: 'New words', ...req.postDataJSON() }));
 	await open(me);
 	assert.equal(await page.locator('[data-sec="mine"] a').count(), 2);
 	assert.match(await page.textContent('[data-sec="mine"]'), /secret.*private/s);
@@ -255,6 +256,16 @@ test('your own token lists private repos and turns your access into buttons', as
 	await page.fill('#rdesc', 'New words');
 	await page.press('#rdesc', 'Enter');
 	await page.waitForSelector('#rdesc-status:has-text("saved")');
+	assert.deepEqual(await page.$$eval('.toggle', bs => bs.map(b => b.textContent + '=' + b.getAttribute('aria-pressed'))), ['public=false', 'issues=false', 'discussions=false']);
+	await page.click('[data-toggle="has_issues"]');
+	await page.waitForSelector('[data-toggle="has_issues"][aria-pressed="true"]');
+	assert.deepEqual(patches.at(-1), { has_issues: true });
+	await page.click('[data-toggle="private"]');
+	assert.equal(await page.textContent('[data-toggle="private"]'), 'make public?', 'visibility asks first');
+	await page.click('[data-toggle="private"]');
+	await page.waitForSelector('[data-toggle="private"][aria-pressed="true"]');
+	assert.deepEqual(patches.at(-1), { private: false });
+	assert.equal(await page.locator('main h1 .priv').count(), 0);
 	assert.match(await page.textContent('[data-sec="mine"]'), /New words/);
 	await page.waitForSelector('#actions li .tag');
 	assert.match(await page.textContent('#actions'), /success CI/);

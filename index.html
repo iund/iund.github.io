@@ -143,6 +143,9 @@ layout: null
 		h2:has(.clone) { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 0.5em; }
 		h2 .clone { font-size: calc(1em / 1.5); font-weight: normal; }
 		p.edit { display: flex; gap: 0.5em; align-items: baseline; }
+		.toggles { display: flex; flex-wrap: wrap; gap: 0.4em; }
+		.toggle[aria-pressed="true"] { color: var(--ok); border-color: currentColor; }
+		.toggle[aria-pressed="true"]::before { content: "✓"; }
 		p.edit input { flex: 1; font: inherit; border: 0; border-radius: 0; background: none; padding: 0; }
 		.crumbs { margin-bottom: 0.5em; overflow-wrap: anywhere; }
 		.markdown-body img { max-width: 100%; }
@@ -285,7 +288,7 @@ const ls = {
 
 // Trim API objects before caching so storage holds many more of them.
 const slimRepo = r => ({ name: r.name, full_name: r.full_name, owner: { login: r.owner.login, avatar_url: r.owner.avatar_url }, description: r.description, language: r.language,
-	stargazers_count: r.stargazers_count, forks_count: r.forks_count, size: r.size, has_pages: r.has_pages, is_template: r.is_template, parent: r.parent && r.parent.full_name, fork: r.fork, private: r.private, permissions: r.permissions, archived: r.archived, topics: r.topics, license: r.license && { spdx_id: r.license.spdx_id },
+	stargazers_count: r.stargazers_count, forks_count: r.forks_count, size: r.size, has_pages: r.has_pages, is_template: r.is_template, parent: r.parent && r.parent.full_name, fork: r.fork, private: r.private, permissions: r.permissions, has_issues: r.has_issues, has_discussions: r.has_discussions, archived: r.archived, topics: r.topics, license: r.license && { spdx_id: r.license.spdx_id },
 	default_branch: r.default_branch, html_url: r.html_url, ssh_url: r.ssh_url, clone_url: r.clone_url, homepage: r.homepage, pushed_at: r.pushed_at, created_at: r.created_at });
 const slimGist = g => ({ id: g.id, owner: g.owner.login, description: g.description, html_url: g.html_url, updated_at: g.updated_at, public: g.public,
 	files: Object.values(g.files).map(f => ({ filename: f.filename, language: f.language, raw_url: f.raw_url })) });
@@ -483,7 +486,7 @@ async function loadMine() {
 	} catch { gists = null; }
 	GISTS = gists || SITE.gists || [];
 	showGists();
-	MINE = all ? all.map(r => { const b = BUILT.find(x => same(x.full_name, r.full_name)); return b ? { ...b, private: r.private, permissions: r.permissions } : r; }) : BUILT;
+	MINE = all ? all.map(r => { const b = BUILT.find(x => same(x.full_name, r.full_name)); return b ? { ...b, private: r.private, permissions: r.permissions, has_issues: r.has_issues, has_discussions: r.has_discussions } : r; }) : BUILT;
 	showMine();
 }
 
@@ -646,7 +649,7 @@ async function showRepo(owner, name, at, n, refresh) {
 	dwell = [20000, 60000].map(ms => setTimeout(() => state.repo === r && learn(r, 1), ms));
 	const sections = ['releases', ...(mine ? ['actions'] : []), 'readme', 'files', ...(mine ? [] : ['similar'])];
 	main.innerHTML = `<div class="head"><div>
-			<h1>${esc(r.name)}${r.fork ? ` <a class="tag" href="#${r.parent ? esc(r.parent) : '~parent/' + esc(r.full_name)}" title="${r.parent ? 'Fork of ' + esc(r.parent) : 'Open the repository this is a fork of'}">fork</a>` : ''}${r.is_template ? ' <span class="tag">template</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}${r.private ? ' <span class="tag">private</span>' : ''}</h1>
+			<h1>${esc(r.name)}${r.fork ? ` <a class="tag" href="#${r.parent ? esc(r.parent) : '~parent/' + esc(r.full_name)}" title="${r.parent ? 'Fork of ' + esc(r.parent) : 'Open the repository this is a fork of'}">fork</a>` : ''}${r.is_template ? ' <span class="tag">template</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}${r.private ? ' <span class="tag priv">private</span>' : ''}</h1>
 			<p id="rdesc"${r.description ? '' : ' hidden'}>${esc(r.description)}</p>
 			<p class="muted">${[
 				`<a href="#${esc(r.owner.login)}">${r.owner.avatar_url ? `<img class="av" src="${avatar(r.owner.avatar_url, 40)}" alt="">` : ''}${esc(r.owner.login)}</a>`,
@@ -711,15 +714,26 @@ function setStar(on) {
 // With a token, what you may do in a repo becomes buttons: vscode.dev, new release and running workflows (write),
 // settings and the description (admin). Permissions are free in lists fetched with the token, else 1 call.
 async function access(r, n, refresh) {
-	const p = r.permissions || ((await gh(`repos/${r.full_name}`, { refresh, map: d => d && slimRepo(d) }).catch(() => null)) || {}).permissions;
+	const x = r.permissions ? r : await gh(`repos/${r.full_name}`, { refresh, map: d => d && slimRepo(d) }).catch(() => null), p = x && x.permissions;
 	if (!p || n !== seq) return;
 	$('main .head .clone .row').insertAdjacentHTML('afterbegin', (p.push ? ext(`https://vscode.dev/github/${r.full_name}`, ICON.code + 'vscode', 'Open in vscode.dev') : '') + (p.admin ? ext(r.html_url + '/settings', ICON.gear + 'edit', 'Repository settings') : ''));
-	if (p.admin) $('#rdesc').outerHTML = `<p class="edit"><input id="rdesc" value="${esc(r.description || '')}" placeholder="Add a description" aria-label="Description" spellcheck="false"><span class="muted" id="rdesc-status"></span></p>`;
+	if (p.admin) $('#rdesc').outerHTML = `<p class="edit"><input id="rdesc" value="${esc(r.description || '')}" placeholder="Add a description" aria-label="Description" spellcheck="false"><span class="muted" id="rdesc-status"></span></p>
+		<p class="toggles">${TOGGLES.map(([k, label, title]) => { const on = k === 'private' ? !x.private : !!x[k]; return `<button class="btn toggle" data-toggle="${k}" aria-pressed="${on}" title="${title}">${label}</button>`; }).join('')}</p>`;
 	if (!p.push) return;
 	$('#releases > h2').insertAdjacentHTML('beforeend', `<span class="clone">${ext(r.html_url + '/releases/new', ICON.plus + 'release', 'Draft a new release')}</span>`);
 	if (!$('#actions')) return;
 	const wfs = await workflows(r, refresh).catch(() => []);
 	if (n === seq && wfs.length) $('#actions > h2').insertAdjacentHTML('beforeend', `<span class="clone">${wfs.map(w => btn('play', esc(w.name), `data-run="${w.id}" title="Run ${esc(w.name)} on ${esc(r.default_branch)}"`)).join('')}</span>`);
+}
+// Admin switches: who can see the repo, and whether people can comment through issues and discussions.
+const TOGGLES = [['private', 'public', 'Anyone can see this repository'], ['has_issues', 'issues', 'Anyone can open and comment on issues'], ['has_discussions', 'discussions', 'Anyone can start and comment on discussions']];
+// A saved repo change updates the shown repo and drops the cached lists it appears in.
+function repoSaved(r, d) {
+	Object.assign(r, { description: d.description, private: d.private, has_issues: d.has_issues, has_discussions: d.has_discussions });
+	const full = r.full_name.toLowerCase();
+	dropCache(k => k.includes(' user/repos?') || k.includes(` users/${r.owner.login.toLowerCase()}/repos?`) || k.endsWith(' repos/' + full));
+	if (isMine(r.full_name)) showMine();
+	else if (state.repos.includes(r)) fill('owner', state.repos, { title: state.owner });
 }
 // Workflows you can start by hand: listed with 1 call, then each file is checked for workflow_dispatch
 // (free from raw for public repos, 1 call each for private ones).
@@ -1026,6 +1040,25 @@ main.addEventListener('click', async e => {
 		}
 		return;
 	}
+	if (b.dataset.toggle) {
+		const r = state.repo, k = b.dataset.toggle, on = b.getAttribute('aria-pressed') === 'true';
+		// Changing who can see the repo takes a second click.
+		if (k === 'private' && !b.classList.contains('bad')) {
+			b.classList.add('bad');
+			b.textContent = on ? 'make private?' : 'make public?';
+			return setTimeout(() => { b.textContent = 'public'; b.classList.remove('bad'); }, 3000);
+		}
+		b.disabled = true;
+		try {
+			const { d } = await request(`repos/${r.full_name}`, { method: 'PATCH', body: { [k]: k === 'private' ? on : !on } });
+			if (!d) throw new Error('token lacks Administration');
+			repoSaved(r, d);
+			b.setAttribute('aria-pressed', k === 'private' ? !d.private : !!d[k]);
+			if (k === 'private') { $('main h1 .priv')?.remove(); if (d.private) $('main h1').insertAdjacentHTML('beforeend', ' <span class="tag priv">private</span>'); }
+		} catch (err) { flash(b, err instanceof Response ? (err.status === 403 ? 'token lacks Administration' : err.status === 422 ? 'not allowed' : 'failed') : err.message); }
+		b.disabled = false;
+		return;
+	}
 	if (b.dataset.run) {
 		const r = state.repo;
 		b.disabled = true;
@@ -1067,14 +1100,11 @@ main.addEventListener('keydown', e => {
 });
 main.addEventListener('change', async e => {
 	if (e.target.id === 'rdesc' && state.repo) {
-		const r = state.repo, st = $('#rdesc-status'), full = r.full_name.toLowerCase();
+		const r = state.repo, st = $('#rdesc-status');
 		try {
 			const { d } = await request(`repos/${r.full_name}`, { method: 'PATCH', body: { description: e.target.value.trim() } });
 			if (!d) throw new Error('token lacks Administration');
-			r.description = d.description;
-			dropCache(k => k.includes(' user/repos?') || k.includes(` users/${r.owner.login.toLowerCase()}/repos?`) || k.endsWith(' repos/' + full));
-			if (isMine(r.full_name)) showMine();
-			else if (state.repos.includes(r)) fill('owner', state.repos, { title: state.owner });
+			repoSaved(r, d);
 			st.textContent = 'saved';
 		} catch (err) { st.textContent = err instanceof Response ? (err.status === 403 ? 'token lacks Administration' : 'failed') : err.message; }
 		return;
