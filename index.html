@@ -131,6 +131,10 @@ layout: null
 		.clone button.dirty { color: var(--run); border-color: currentColor; }
 		nav summary .add { font: inherit; line-height: 1; color: var(--text); background: var(--raise); border: 1px solid var(--line); border-radius: 4px; padding: 0 0.4em; cursor: pointer; }
 		nav summary .add:hover { background: var(--active); }
+		h2:has(.clone) { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 0.5em; }
+		h2 .clone { font-size: calc(1em / 1.5); font-weight: normal; }
+		p.edit { display: flex; gap: 0.5em; align-items: baseline; }
+		p.edit input { flex: 1; font: inherit; border: 0; border-radius: 0; background: none; padding: 0; }
 		.crumbs { margin-bottom: 0.5em; overflow-wrap: anywhere; }
 		.markdown-body img { max-width: 100%; }
 		.markdown-body .anchor { display: none; }
@@ -208,6 +212,9 @@ const ICON = {
 	save: svg('<path d="M3 2h8l2.5 2.5V13a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5 2v4h5V2M5 14V9.5h6V14"/>'),
 	del: svg('<path d="M2.5 4h11M6 4V2.5h4V4m-5.5 0 .6 9.5h5.8l.6-9.5M6.8 6.5v5m2.4-5v5"/>'),
 	plus: svg('<path d="M8 3v10M3 8h10"/>'),
+	play: svg('<path d="M5 3.5v9l7-4.5z"/>'),
+	code: svg('<path d="M6 4 2 8l4 4M10 4l4 4-4 4"/>'),
+	gear: svg('<circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>'),
 	files: svg('<path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H6l1.5 1.5h5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z"/>'),
 };
 const JSON_T = 'application/vnd.github+json', HTML_T = 'application/vnd.github.html+json';
@@ -615,7 +622,7 @@ async function showRepo(owner, name, at, n, refresh) {
 	const sections = ['releases', ...(mine ? ['actions'] : []), 'readme', 'files', ...(mine ? [] : ['similar'])];
 	main.innerHTML = `<div class="head"><div>
 			<h1>${esc(r.name)}${r.fork ? ` <a class="tag" href="#${r.parent ? esc(r.parent) : '~parent/' + esc(r.full_name)}" title="${r.parent ? 'Fork of ' + esc(r.parent) : 'Open the repository this is a fork of'}">fork</a>` : ''}${r.is_template ? ' <span class="tag">template</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}${r.private ? ' <span class="tag">private</span>' : ''}</h1>
-			${r.description ? `<p>${esc(r.description)}</p>` : ''}
+			<p id="rdesc"${r.description ? '' : ' hidden'}>${esc(r.description)}</p>
 			<p class="muted">${[
 				`<a href="#${esc(r.owner.login)}">${r.owner.avatar_url ? `<img class="av" src="${avatar(r.owner.avatar_url, 40)}" alt="">` : ''}${esc(r.owner.login)}</a>`,
 				esc(r.language),
@@ -627,7 +634,6 @@ async function showRepo(owner, name, at, n, refresh) {
 				r.homepage ? ext(r.homepage, esc(r.homepage.replace(/^https?:\/\//, ''))) : '',
 				r.has_pages && !(r.homepage || '').startsWith(pagesUrl(r).replace(/\/$/, '')) ? ext(pagesUrl(r), 'site', 'GitHub Pages site') : '',
 			].filter(Boolean).join(' · ')}</p>
-			${token ? `<p class="muted" id="access">${accessHTML(r)}</p>` : ''}
 			${r.topics && r.topics.length ? `<div class="topics">${r.topics.map(t => `<a href="#~topic/${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
 		</div>
 		<div class="clone">
@@ -646,25 +652,25 @@ async function showRepo(owner, name, at, n, refresh) {
 		${mine ? '' : '<section id="similar"><h2>Similar repositories</h2></section>'}
 		<div id="age">${r.runs ? built() : ''}</div>`;
 	if (token) setStar(isStarred(r));
-	if (token && !r.permissions) gh(`repos/${r.full_name}`, { refresh, map: d => d && slimRepo(d) }).then(x => n === seq && x && ($('#access').innerHTML = accessHTML(x)), () => {});
+	if (token) access(r, n, refresh);
 	$('#files').addEventListener('toggle', e => e.target.open && !e.target.querySelector('div').innerHTML && openFiles({ kind: 'tree', ref: r.default_branch, path: '' }));
 	if (at) openFiles(at, true);
 	await Promise.all([
-		part('releases', 'Releases', n, async () => releasesHTML(r, r.releases || await gh(`repos/${r.full_name}/releases?per_page=6`, { accept: HTML_T, refresh, map: d => d && d.map(slimRelease) }))),
-		part('readme', 'README', n, () => readmeHTML(r, refresh)),
-		mine && part('actions', 'Actions', n, async () => runsHTML(r, r.runs || await gh(`repos/${r.full_name}/actions/runs?per_page=10`, { refresh, map: d => d && d.workflow_runs.map(w => ({ name: w.name, head_branch: w.head_branch, status: w.status, conclusion: w.conclusion, created_at: w.created_at, html_url: w.html_url })) }))),
+		part('releases', n, async () => releasesHTML(r, r.releases || await gh(`repos/${r.full_name}/releases?per_page=6`, { accept: HTML_T, refresh, map: d => d && d.map(slimRelease) }))),
+		part('readme', n, () => readmeHTML(r, refresh)),
+		mine && part('actions', n, async () => runsHTML(r, r.runs || await liveRuns(r, refresh))),
 	]);
 	// Similar repositories load when scrolled into view (search calls have their own per-minute limit).
 	if (!mine && n === seq) whenVisible($('#similar'), () => loadSimilar(r, n, refresh));
 	if (n === seq && !r.runs) $('#age').innerHTML = freshness(`repos/${r.full_name}/releases?per_page=6`);
 }
-// Fill a section from an async HTML builder, showing any error in place.
-async function part(id, title, n, build) {
+// Fill a section from an async HTML builder, showing any error in place. The section's heading (and its buttons) stays.
+async function part(id, n, build) {
 	let html;
 	try { html = await build(); } catch (e) { html = `<p class="muted">${esc(failure(e))}</p>`; }
 	if (n !== seq) return;
 	const sec = $('#' + id);
-	sec.innerHTML = `<h2>${title}</h2>${html}`;
+	sec.innerHTML = sec.querySelector(':scope > h2').outerHTML + html;
 	sec.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(h => h.id ||= 'user-content-' + h.textContent.trim().toLowerCase().replace(/[^\w\- ]/g, '').replace(/ /g, '-'));
 	fixLinks(sec, state.repo);
 }
@@ -675,17 +681,30 @@ function setStar(on) {
 	b.querySelector('span').textContent = on ? 'starred' : 'star';
 	b.title = on ? 'Remove from your stars' : 'Star (bookmark) this repository';
 }
-// With a token, GitHub says what you may do in each repo (free in lists fetched with the token, else 1 call).
-const LEVELS = [['admin', 'admin'], ['maintain', 'maintain'], ['push', 'write'], ['triage', 'triage'], ['pull', 'read']];
-function accessHTML(r) {
-	const p = r.permissions;
-	if (!p) return '';
-	return `Your access: <b>${(LEVELS.find(([k]) => p[k]) || [, 'none'])[1]}</b>` + [
-		p.admin && ext(r.html_url + '/settings', 'settings'),
-		p.push && ext(r.html_url + '/releases/new', 'new release'),
-		p.push && ext('https://github.dev/' + r.full_name, 'edit', 'Open in github.dev'),
-	].filter(Boolean).map(x => ' · ' + x).join('');
+// With a token, what you may do in a repo becomes buttons: vscode.dev, new release and running workflows (write),
+// settings and the description (admin). Permissions are free in lists fetched with the token, else 1 call.
+async function access(r, n, refresh) {
+	const p = r.permissions || ((await gh(`repos/${r.full_name}`, { refresh, map: d => d && slimRepo(d) }).catch(() => null)) || {}).permissions;
+	if (!p || n !== seq) return;
+	$('main .head .clone').insertAdjacentHTML('afterbegin', (p.push ? ext(`https://vscode.dev/github/${r.full_name}`, ICON.code + 'vscode', 'Open in vscode.dev') : '') + (p.admin ? ext(r.html_url + '/settings', ICON.gear + 'settings', 'Repository settings') : ''));
+	if (p.admin) $('#rdesc').outerHTML = `<p class="edit"><input id="rdesc" value="${esc(r.description || '')}" placeholder="Add a description" aria-label="Description" spellcheck="false"><span class="muted" id="rdesc-status"></span></p>`;
+	if (!p.push) return;
+	$('#releases > h2').insertAdjacentHTML('beforeend', `<span class="clone">${ext(r.html_url + '/releases/new', ICON.plus + 'release', 'Draft a new release')}</span>`);
+	if (!$('#actions')) return;
+	const wfs = await workflows(r, refresh).catch(() => []);
+	if (n === seq && wfs.length) $('#actions > h2').insertAdjacentHTML('beforeend', `<span class="clone">${wfs.map(w => btn('play', esc(w.name), `data-run="${w.id}" title="Run ${esc(w.name)} on ${esc(r.default_branch)}"`)).join('')}</span>`);
 }
+// Workflows you can start by hand: listed with 1 call, then each file is checked for workflow_dispatch
+// (free from raw for public repos, 1 call each for private ones).
+async function workflows(r, refresh) {
+	const list = await gh(`repos/${r.full_name}/actions/workflows`, { refresh, map: d => d && d.workflows.filter(w => w.state === 'active' && w.path.startsWith('.github/')).map(w => ({ id: w.id, name: w.name, path: w.path })) }) || [];
+	const ok = await Promise.all(list.map(w => (r.private
+		? gh(`repos/${r.full_name}/contents/${w.path}?ref=${encodeURIComponent(r.default_branch)}`, { accept: 'application/vnd.github.raw+json', text: true, refresh })
+		: fetch(`https://raw.githubusercontent.com/${r.full_name}/${encodeURIComponent(r.default_branch)}/${w.path}`).then(x => x.ok ? x.text() : '')
+	).then(t => /\bworkflow_dispatch\b/.test(t || ''), () => false)));
+	return list.filter((w, i) => ok[i]);
+}
+const liveRuns = (r, refresh) => gh(`repos/${r.full_name}/actions/runs?per_page=10`, { refresh, map: d => d && d.workflow_runs.map(w => ({ name: w.name, head_branch: w.head_branch, status: w.status, conclusion: w.conclusion, created_at: w.created_at, html_url: w.html_url })) });
 function runsHTML(r, runs) {
 	const cls = s => s === 'success' ? 'ok' : s === 'failure' ? 'bad' : 'run';
 	return `<ul>${(runs || []).map(w => { const s = w.conclusion || w.status; return `<li><span class="tag ${cls(s)}">${esc(s)}</span> ${ext(w.html_url, esc(w.name))} <span class="muted">${esc(w.head_branch)} · ${when(w.created_at)}</span></li>`; }).join('') || '<li class="muted">No workflow runs</li>'}</ul>${ext(r.html_url + '/actions', 'All workflow runs')}`;
@@ -733,7 +752,7 @@ const keywords = r => (((r.description || '') + ' ' + (r.name || r.full_name.spl
 async function loadSimilar(r, n, refresh, skip = x => same(x.full_name, r.full_name)) {
 	const key = 'similar ' + r.full_name;
 	let saved = !refresh && cacheGet(key);
-	await part('similar', 'Similar repositories', n, async () => {
+	await part('similar', n, async () => {
 		if (!saved || Date.now() - saved.t > DAY) {
 			$('#similar').innerHTML = '<h2>Similar repositories</h2><p class="muted">Searching…</p>';
 			const lang = r.language ? ` language:"${r.language}"` : '', topics = r.topics || [], words = keywords(r).slice(0, 3);
@@ -823,10 +842,13 @@ function newGist() {
 		<div class="clone">${btn('plus', 'add file', 'id="gist-add" title="Add another file"')}${btn('save', 'create', 'id="gist-create" title="Create the gist"')}</div></div>` + fileSec({ filename: '' }, true);
 }
 // Writes go straight to GitHub; the answer replaces the listed gist and the cached list is dropped.
+const dropCache = f => {
+	store.keys().filter(k => k.startsWith('gx:') && f(k.toLowerCase())).forEach(store.remove);
+	[...mem.keys()].filter(k => f(k.toLowerCase())).forEach(k => mem.delete(k));
+};
 function setGists(list) {
 	GISTS = list;
-	store.keys().filter(k => k.includes(' gists?')).forEach(store.remove);
-	[...mem.keys()].filter(k => k.includes(' gists?')).forEach(k => mem.delete(k));
+	dropCache(k => k.includes(' gists?'));
 	showGists();
 }
 async function writeGist(path, method, body) {
@@ -900,6 +922,18 @@ main.addEventListener('click', async e => {
 		catch (err) { flash(b, gistFail(err)); b.disabled = false; }
 		return;
 	}
+	if (b.dataset.run) {
+		const r = state.repo;
+		b.disabled = true;
+		try {
+			if (!(await request(`repos/${r.full_name}/actions/workflows/${b.dataset.run}/dispatches`, { method: 'POST', body: { ref: r.default_branch } })).d) throw new Error('token lacks Actions');
+			flash(b, 'started');
+			const n = seq;
+			setTimeout(() => n === seq && part('actions', n, async () => runsHTML(r, await liveRuns(r, true))), 4000);
+		} catch (err) { flash(b, err instanceof Response ? (err.status === 403 ? 'token lacks Actions' : 'failed') : err.message); }
+		b.disabled = false;
+		return;
+	}
 	if (b.id === 'refresh') { refreshSeq = seq + 1; state.owner = null; return route(); }
 	if (b.id === 'star') {
 		const r = state.repo, on = b.classList.contains('on');
@@ -921,8 +955,21 @@ main.addEventListener('click', async e => {
 });
 
 main.addEventListener('input', e => e.target.closest('section')?.querySelector('[data-save-file]')?.classList.add('dirty'));
-main.addEventListener('keydown', e => e.key === 'Enter' && e.target.id === 'gdesc' && e.target.blur());
+main.addEventListener('keydown', e => e.key === 'Enter' && /^[gr]desc$/.test(e.target.id) && e.target.blur());
 main.addEventListener('change', async e => {
+	if (e.target.id === 'rdesc' && state.repo) {
+		const r = state.repo, st = $('#rdesc-status'), full = r.full_name.toLowerCase();
+		try {
+			const { d } = await request(`repos/${r.full_name}`, { method: 'PATCH', body: { description: e.target.value.trim() } });
+			if (!d) throw new Error('token lacks Administration');
+			r.description = d.description;
+			dropCache(k => k.includes(' user/repos?') || k.includes(` users/${r.owner.login.toLowerCase()}/repos?`) || k.endsWith(' repos/' + full));
+			if (isMine(r.full_name)) fill('mine', MINE, { title: OWNER, empty: 'No repositories.' });
+			else if (state.repos.includes(r)) fill('owner', state.repos, { title: state.owner });
+			st.textContent = 'saved';
+		} catch (err) { st.textContent = err instanceof Response ? (err.status === 403 ? 'token lacks Administration' : 'failed') : err.message; }
+		return;
+	}
 	if (e.target.id !== 'gdesc' || !state.gist) return;
 	const st = $('#gist-status');
 	try { const g = await writeGist('gists/' + state.gist, 'PATCH', { description: e.target.value.trim() }); document.title = `${gistTitle(g)} · ${OWNER}`; st.textContent = 'description saved'; }

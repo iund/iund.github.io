@@ -211,25 +211,42 @@ test("an owner's repos page in as you scroll, then Similar appears at the end", 
 	assert.ok((await page.$$eval('#similar .card b', bs => bs.map(b => b.textContent))).every(n => !n.startsWith('many/')), 'Similar leaves out the owner');
 });
 
-test('your own token lists private repos and shows your access', async t => {
+test('your own token lists private repos and turns your access into buttons', async t => {
 	if (!data.repos.length) return t.skip('no repos');
 	const me = data.user.login;
 	await page.addInitScript(me => Object.entries({ 'explore-consent': 'yes', 'explore-token': '"tok"', 'explore-me': JSON.stringify(me) }).forEach(([k, v]) => localStorage.setItem(k, v)), me);
 	API[`repos/${me}/secret/actions/runs`] = { workflow_runs: [{ name: 'CI', head_branch: 'main', status: 'completed', conclusion: 'success', created_at: '2026-01-01T00:00:00Z', html_url: 'https://github.com/x' }] };
 	API[`repos/${me}/secret/git/trees/main`] = { truncated: false, tree: [{ path: 'a.txt', type: 'blob', size: 5 }] };
 	API[`repos/${me}/secret/contents/a.txt`] = 'hello';
+	API[`repos/${me}/secret/actions/workflows`] = { workflows: [{ id: 7, name: 'Pages', path: '.github/workflows/pages.yml', state: 'active' }, { id: 8, name: 'Push only', path: '.github/workflows/push.yml', state: 'active' }] };
+	API[`repos/${me}/secret/contents/.github/workflows/pages.yml`] = 'on:\n  workflow_dispatch:\n';
+	API[`repos/${me}/secret/contents/.github/workflows/push.yml`] = 'on: push\n';
+	API[`repos/${me}/secret/actions/workflows/7/dispatches`] = {};
+	API[`repos/${me}/secret`] = (u, req) => repo(`${me}/secret`, { private: true, description: req.postDataJSON().description });
 	await open(me);
 	assert.equal(await page.locator('[data-sec="mine"] a').count(), 2);
 	assert.match(await page.textContent('[data-sec="mine"]'), /secret.*private/s);
 	await open(`${me}/secret/blob/main/a.txt`);
 	assert.match(await page.textContent('main h1'), /secret private/);
-	assert.match(await page.textContent('#access'), /Your access: admin · settings · new release · edit/);
+	await page.waitForSelector('#actions [data-run]');
+	assert.deepEqual(await page.$$eval('main .head .clone > :not(.sep)', els => els.slice(0, 3).map(e => e.textContent.trim())), ['vscode', 'settings', 'star']);
+	assert.deepEqual(await page.$$eval('#actions [data-run]', bs => bs.map(b => b.textContent.trim())), ['Pages'], 'only workflows with workflow_dispatch');
+	assert.equal(await page.textContent('#releases > h2 .clone'), 'release');
+	await page.click('#actions [data-run]');
+	await page.waitForSelector('#actions [data-run]:has-text("started")');
+	assert.ok(calls.includes(`POST repos/${me}/secret/actions/workflows/7/dispatches`));
+	await page.fill('#rdesc', 'New words');
+	await page.press('#rdesc', 'Enter');
+	await page.waitForSelector('#rdesc-status:has-text("saved")');
+	assert.match(await page.textContent('[data-sec="mine"]'), /New words/);
 	await page.waitForSelector('#actions li .tag');
 	assert.match(await page.textContent('#actions'), /success CI/);
 	assert.match(await page.textContent('#files .file-body pre'), /hello/);
 	await open(OTHER);
-	await page.waitForSelector('#access:has-text("read")');
-	assert.equal(await page.textContent('#access'), 'Your access: read');
+	await page.waitForFunction(() => document.querySelector('#readme h2'));
+	await page.waitForTimeout(300);
+	assert.ok(calls.includes(`repos/${OTHER}`), 'permissions fetched');
+	assert.equal(await page.locator('main .head a:has-text("settings"), main .head a:has-text("vscode"), input#rdesc').count(), 0, 'read access adds no buttons');
 	assert.equal(calls.filter(c => c === 'user/repos').length, 1);
 });
 
