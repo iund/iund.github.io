@@ -69,7 +69,7 @@ test('embedded build data lists your repos and gists', async () => {
 	await open('');
 	assert.equal(await page.locator('[data-sec="mine"] a').count(), data.repos.length);
 	assert.equal(await page.locator('[data-sec="gists"] a').count(), data.gists.length);
-	assert.equal(await page.textContent('[data-sec="mine"] h2 span'), data.user.login);
+	assert.equal(await page.textContent('[data-sec="mine"] summary span'), data.user.login);
 });
 
 test('home shows your profile tiles without API calls', async () => {
@@ -148,6 +148,44 @@ test('your forks link straight to their upstream from the build', async t => {
 	assert.deepEqual(apiCalls(), []);
 });
 
+test('your repos and gists fold away while exploring and reopen at home', async () => {
+	const open_ = sec => page.$eval(`[data-sec="${sec}"]`, d => d.open);
+	await open(OTHER);
+	assert.deepEqual([await open_('mine'), await open_('gists')], [false, false]);
+	await page.click('a.home');
+	await page.waitForFunction(() => document.querySelector('[data-sec="mine"]').open);
+	assert.equal(await open_('gists'), true);
+});
+
+test('search puts the most obvious match first and remembers the query', async () => {
+	await open('~search/gem');
+	await page.waitForSelector('main .card');
+	assert.deepEqual(await page.$$eval('main .card b', bs => bs.map(b => b.textContent)), ['tiny/gem', 'big/famous'], 'exact name beats stars');
+	assert.equal(await page.getAttribute('#history option', 'value'), 'gem');
+});
+
+test('history and settings persist only after accepting storage', async () => {
+	await open('~search/gem');
+	await page.click('#consent-yes');
+	await open(OTHER);
+	await page.click('[data-sec="discover"] > summary');
+	await page.waitForFunction(() => JSON.parse(localStorage.getItem('explore-open')).discover === false);
+	await page.reload();
+	await page.waitForLoadState('networkidle');
+	assert.equal(await page.isVisible('#consent'), false, 'choice remembered');
+	assert.equal(await page.getAttribute('#history option', 'value'), 'gem');
+	assert.match(await page.textContent('[data-sec="recent"] a .line >> nth=0'), new RegExp('^' + OTHER));
+	assert.equal(await page.$eval('[data-sec="discover"]', d => d.open), false, 'section state remembered');
+
+	await page.click('#token-btn');
+	await page.click('#settings .consent-open');
+	await page.click('#consent-no');
+	await page.reload();
+	await page.waitForLoadState('networkidle');
+	assert.ok(!(await page.$$eval('#history option', o => o.map(x => x.value))).includes('gem'), 'declining forgets earlier searches');
+	assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), ['explore-consent']);
+});
+
 test('pasted GitHub URLs route to the right view', async () => {
 	await open('');
 	for (const [input, hash] of [
@@ -158,6 +196,7 @@ test('pasted GitHub URLs route to the right view', async () => {
 		await page.fill('#q', input);
 		await page.press('#q', 'Enter');
 		assert.equal(new URL(page.url()).hash, hash);
+		await page.waitForLoadState('networkidle');
 	}
 });
 

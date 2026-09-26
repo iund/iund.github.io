@@ -55,12 +55,12 @@ layout: null
 
 		nav { grid-row: 3; overflow-y: auto; background: var(--nav); padding: 0.8em; }
 		nav #filter { width: 100%; box-sizing: border-box; }
-		nav h2, nav summary { display: flex; justify-content: space-between; gap: 0.5em; font-size: 0.95em; font-weight: normal; color: var(--dim); margin: 1em 0.2em 0.3em; }
+		nav summary { display: flex; justify-content: space-between; gap: 0.5em; font-size: 0.95em; font-weight: normal; color: var(--dim); margin: 1em 0.2em 0.3em; }
 		nav summary { list-style: none; cursor: pointer; }
 		nav summary::-webkit-details-marker { display: none; }
 		nav summary::before { content: "▸"; margin-right: 0.3em; }
 		nav details[open] > summary::before { content: "▾"; }
-		nav :is(h2, summary) > span:first-of-type { margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		nav summary > span:first-of-type { margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 		nav a { display: block; padding: 0.35em 0.5em; border-radius: 4px; color: var(--text); text-decoration: none; }
 		nav a:hover { background: var(--raise); }
 		nav a.active { background: var(--active); }
@@ -144,32 +144,32 @@ layout: null
 	<header class="toolbar">
 		<a class="home" href="#" title="Home" aria-label="Home"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.906.664a1.749 1.749 0 0 1 2.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0 1 13.25 15h-3.5a.75.75 0 0 1-.75-.75V9H7v5.25a.75.75 0 0 1-.75.75h-3.5A1.75 1.75 0 0 1 1 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2Zm1.25 1.171a.25.25 0 0 0-.312 0l-5.25 4.2a.25.25 0 0 0-.094.196v7.019c0 .138.112.25.25.25H5.5V8.25a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 .75.75v5.25h2.75a.25.25 0 0 0 .25-.25V6.23a.25.25 0 0 0-.094-.195Z"/></svg></a>
 		<form id="go" role="search">
-			<input id="q" type="search" placeholder="user, owner/repo, GitHub URL or search words  ( / )" autocomplete="off" spellcheck="false" aria-label="User, repository, GitHub URL or search words">
+			<input id="q" type="search" placeholder="user, owner/repo, GitHub URL or search words  ( / )" autocomplete="off" spellcheck="false" aria-label="User, repository, GitHub URL or search words" list="history"><datalist id="history"></datalist>
 			<button class="btn">Open</button>
 		</form>
 		<span class="meter" id="meter" title="GitHub API calls left this hour"><span></span><span class="track"><span></span></span></span>
 		<button class="btn" id="token-btn" aria-expanded="false" aria-controls="settings">Token</button>
 	</header>
 	<form id="settings" hidden>
-		<label for="token">Personal access token</label>
-		<input id="token" type="password" autocomplete="off" placeholder="github_pat_…">
+		<label for="token" title="Raises the API limit from 60 to 5,000 calls an hour and turns on starring and your Starred list. Create a fine-grained token with Public repositories (read-only) access and the account permission Starring: read and write. It is only sent to api.github.com.">Personal access token</label>
+		<input id="token" type="password" autocomplete="off" placeholder="github_pat_…" title="Fine-grained token: Public repositories (read-only), Starring: read and write">
 		<button class="btn">Save</button>
 		<button class="btn" type="button" id="token-clear">Clear</button>
 		<p id="token-status"></p>
-		<p>Raises the API limit from 60 to 5,000 calls an hour and turns on starring and your Starred list. Use a fine-grained token with <b>Public repositories (read-only)</b> access and the account permission <b>Starring: read and write</b>. It is only sent to api.github.com, and kept in this browser only if you accepted storage.</p>
+		<button class="linkish consent-open" type="button" title="Choose whether this browser remembers your token, history and settings">Storage</button>
 	</form>
 	<nav>
 		<input id="filter" type="search" placeholder="Filter lists" aria-label="Filter lists" autocomplete="off">
-		<div data-sec="mine"><h2><span></span><span></span></h2><div></div></div>
-		<div data-sec="gists"><h2><span>Gists</span><span></span></h2><div></div></div>
+		<details data-sec="mine" open><summary><span></span><span></span></summary><div></div></details>
+		<details data-sec="gists" open><summary><span>Gists</span><span></span></summary><div></div></details>
 		<details data-sec="stars" open hidden><summary><span>Starred</span><span></span></summary><div></div></details>
 		<details data-sec="recent" open><summary><span>Recent</span><span></span></summary><div></div></details>
 		<details data-sec="owner" open hidden><summary><span></span><span></span></summary><div></div></details>
-		<details data-sec="discover" open><summary><span>Discover</span><span></span></summary>
+		<details data-sec="discover" open><summary title="Suggestions that mix famous projects with small ones, tuned in this browser by what you open, star, copy and download"><span>Discover</span><span></span></summary>
 			<div id="disc-list"></div>
 			<p class="note" id="disc-status"></p>
 			<p class="note"><button class="btn" id="disc-more">More suggestions</button></p>
-			<p class="note">Mixes famous projects with small ones, tuned in this browser by what you open, star, copy and download. <button class="linkish" id="disc-mix">New mix</button> · <button class="linkish" id="disc-reset">Reset</button> · <button class="linkish" id="consent-open">Storage</button></p>
+			<p class="note"><button class="linkish" id="disc-mix" title="Start a fresh set of suggestions">New mix</button> · <button class="linkish" id="disc-reset" title="Forget what Discover has learned about your interests">Reset</button> · <button class="linkish consent-open" title="Choose whether this browser remembers your history and settings">Storage</button></p>
 		</details>
 	</nav>
 	<main id="main"></main>
@@ -223,6 +223,8 @@ const btn = (icon, label, attrs = '') => `<button ${attrs}>${ICON[icon] || ''}<s
 const same = (a, b) => a.toLowerCase() === b.toLowerCase();
 const isOwner = owner => same(owner, OWNER);
 const isMine = full => MINE.some(r => same(r.full_name, full));
+// Show the current location in the search box, unless the visitor is typing there.
+const setQ = v => document.activeElement !== $('#q') && ($('#q').value = v);
 
 // Storage persists only after the visitor accepts; until then (or after declining) it lives in memory for this visit.
 let consent = null;
@@ -355,7 +357,7 @@ function fill(sec, items, { title, full, empty, html } = {}) {
 	const el = $(`[data-sec="${sec}"]`);
 	el.hidden = false;
 	if (title != null) el.querySelector('span').textContent = title;
-	el.querySelector(':scope > :is(h2, summary) > span:last-child').textContent = items ? items.length : '';
+	el.querySelector(':scope > summary > span:last-child').textContent = items ? items.length : '';
 	el.querySelector(':scope > div').innerHTML = !items ? '<p class="note">Loading…</p>' : items.map(html || (r => repoLink(r, full))).join('') || `<p class="note">${empty}</p>`;
 	applyFilter(); highlight(); settle();
 }
@@ -384,6 +386,7 @@ function addRecent(r) {
 		...ls.get('explore-recent', []).filter(x => x.full_name !== r.full_name)].slice(0, 20);
 	ls.set('explore-recent', list);
 	fill('recent', list, { full: true, empty: 'Repositories you open appear here.' });
+	fillHistory();
 }
 // Your stars are fetched at most every 6 hours and kept in browser storage; starring updates the saved list directly.
 const showStars = list => fill('stars', list, { full: true, empty: 'Star repositories to bookmark them here.' });
@@ -429,11 +432,14 @@ async function route() {
 		if (n === seq) setTimeout(() => anchor = null);
 	}
 }
-function view(title, o) {
+// Your repos and gists fold away while searching or exploring others, and open again on your own content.
+let ownView = null;
+function view(title, o, own) {
 	Object.assign(state, { repo: null, gist: null, files: null }, o);
 	document.title = title ? `${title} · ${OWNER}` : OWNER;
 	main.scrollTop = 0;
-	highlight();
+	if (own !== ownView) ['mine', 'gists'].forEach(sec => $(`[data-sec="${sec}"]`).open = ownView = own);
+	highlight(); settle();
 }
 
 // Your own repos are built into the page; any other owner costs one call (cached for an hour).
@@ -452,8 +458,8 @@ async function loadOwner(owner, refresh) {
 }
 
 async function showOwner(owner, n, refresh) {
-	view(isOwner(owner) ? '' : owner);
-	$('#q').value = owner;
+	view(isOwner(owner) ? '' : owner, null, isOwner(owner));
+	setQ(owner);
 	main.innerHTML = '<p class="muted">Loading…</p>';
 	const mine = isOwner(owner);
 	const u = mine ? SITE.user : await gh(`users/${encodeURIComponent(owner)}`, { ttl: DAY, refresh });
@@ -480,15 +486,31 @@ function freshness(path) {
 }
 
 async function showSearch(q, topic, n) {
-	view(topic ? 'Topic: ' + topic : 'Search: ' + q);
-	$('#q').value = topic ? '' : q;
+	view(topic ? 'Topic: ' + topic : 'Search: ' + q, null, false);
+	setQ(topic ? '' : q);
 	main.innerHTML = '<p class="muted">Searching…</p>';
-	const res = await gh(`search/repositories?per_page=30&sort=stars&q=${encodeURIComponent(q)}`, { ttl: DAY, map: d => ({ total_count: d.total_count, items: d.items.map(slimRepo) }) });
+	if (!topic) { ls.set('explore-searches', [q, ...ls.get('explore-searches', []).filter(x => x !== q)].slice(0, 20)); fillHistory(); }
+	const res = await gh(`search/repositories?per_page=30&q=${encodeURIComponent(q)}`, { ttl: DAY, map: d => ({ total_count: d.total_count, items: d.items.map(slimRepo) }) });
 	if (n !== seq) return;
 	main.innerHTML = `<h1>${topic ? 'Topic: ' + esc(topic) : 'Search: ' + esc(q)}</h1>
-		<p class="muted">${num(res.total_count)} repositories${res.total_count > 30 ? ', 30 most starred shown' : ''}</p>
-		<div class="cards">${res.items.map(card).join('') || '<p class="muted">Nothing found.</p>'}</div>`;
+		<p class="muted">${num(res.total_count)} repositories${res.total_count > 30 ? ', top 30 shown' : ''}</p>
+		<div class="cards">${rank(res.items, q).map(card).join('') || '<p class="muted">Nothing found.</p>'}</div>`;
 }
+// Most obvious first (the name matches what you typed), then popularity, how well it fits your interests,
+// whether you've opened or starred it, and GitHub's own relevance order.
+function rank(items, q) {
+	const S = interests().score, flat = t => t.toLowerCase().replace(/[-_.\s]+/g, '');
+	const words = q.toLowerCase().split(/\s+/).filter(w => w && !w.includes(':'));
+	const known = new Set([...(starred ? starred.list : []), ...ls.get('explore-recent', [])].map(r => r.full_name.toLowerCase()));
+	const score = (r, i) => (words.length && flat(r.name) === flat(words.join('')) ? 10 : words.length && words.every(w => r.name.toLowerCase().includes(w)) ? 4 : 0)
+		+ 1.5 * Math.log10(1 + r.stargazers_count)
+		+ Math.min(4, (r.topics || []).reduce((sum, t) => sum + Math.max(0, S.topics[t] || 0), 0) + Math.max(0, S.langs[r.language] || 0) / 2)
+		+ (known.has(r.full_name.toLowerCase()) ? 2 : 0)
+		+ 2 * (items.length - i) / items.length;
+	return items.map((r, i) => [r, score(r, i)]).sort((a, b) => b[1] - a[1]).map(([r]) => r);
+}
+// Past searches and recent repos, suggested as you type in the search box.
+const fillHistory = () => $('#history').innerHTML = [...ls.get('explore-searches', []), ...ls.get('explore-recent', []).map(r => r.full_name)].map(v => `<option value="${esc(v)}">`).join('');
 
 // ---- Repo view: built data for your repos, live data (cached) for everyone else's ----
 async function showRepo(owner, name, at, n, refresh) {
@@ -499,8 +521,8 @@ async function showRepo(owner, name, at, n, refresh) {
 	if (n !== seq) return;
 	if (!r) throw new Error(`There is no public repository called “${full}”.`);
 	const mine = isMine(r.full_name);
-	view(r.full_name, { repo: r });
-	$('#q').value = r.full_name;
+	view(r.full_name, { repo: r }, mine);
+	setQ(r.full_name);
 	addRecent(r);
 	learn(r, disc.shown.has(r.full_name.toLowerCase()) ? 2 : 1);
 	dwell.forEach(clearTimeout);
@@ -681,8 +703,8 @@ function loadFile(body, url, name, bytes) {
 // ---- Gist view (built list; file contents load from raw URLs) ----
 function showGist(id) {
 	const g = GISTS.find(x => x.id === id);
-	view(gistTitle(g), { gist: id });
-	$('#q').value = '';
+	view(gistTitle(g), { gist: id }, true);
+	setQ('');
 	main.innerHTML = `<div class="head"><div><h1>${esc(gistTitle(g))}</h1><p class="muted">updated ${when(g.updated_at)}</p></div>
 		<div class="clone">${ext(g.html_url, ICON.eye + 'github', 'View on GitHub')}<a href="https://gist.github.com/${esc(g.owner)}/${esc(g.id)}/archive/HEAD.zip" title="Download ZIP">${ICON.dl}zip</a></div></div>` +
 		g.files.map(f => `<section><div class="filehead"><h2>${esc(f.filename)} <small class="muted">${esc(f.language || '')}</small></h2><div class="clone">
@@ -934,13 +956,14 @@ $('#settings').addEventListener('submit', e => { e.preventDefault(); const t = $
 $('#token-clear').addEventListener('click', () => useToken(''));
 $('#consent-yes').addEventListener('click', () => setConsent('yes'));
 $('#consent-no').addEventListener('click', () => setConsent('no'));
-$('#consent-open').addEventListener('click', () => $('#consent').hidden = false);
+$$('.consent-open').forEach(b => b.addEventListener('click', () => $('#consent').hidden = false));
 if (!consent) $('#consent').hidden = false;
 
 fill('mine', MINE, { title: OWNER, empty: 'No public repositories.' });
 fill('gists', GISTS, { empty: 'No public gists.', html: g => `<a href="#gist/${esc(g.id)}" data-full="gist/${esc(g.id)}"><span class="line">${esc(gistTitle(g))}</span></a>` });
 fill('recent', ls.get('explore-recent', []), { full: true, empty: 'Repositories you open appear here.' });
 addEventListener('hashchange', route);
+fillHistory();
 tokenLabel();
 rate();
 Promise.allSettled([loadStars(), route()]).then(() => discover());
