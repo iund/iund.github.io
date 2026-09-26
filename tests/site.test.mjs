@@ -30,6 +30,8 @@ const API = {
 	user: () => ({ login: data.user.login }),
 	'user/repos': (u, req) => req.method() === 'POST' ? { ...repo(`${data.user.login}/${req.postDataJSON().name}`, { description: req.postDataJSON().description, private: req.postDataJSON().private }), permissions: { admin: true, push: true, pull: true }, auto_init: req.postDataJSON().auto_init } : [{ ...data.repos[0], permissions: { admin: true, push: true, pull: true } }, repo(`${data.user.login}/secret`, { private: true, permissions: { admin: true, push: true, pull: true } })],
 	[`repos/${OTHER}`]: { ...repo(OTHER), permissions: { pull: true } },
+	'users/norepos': { login: 'norepos', name: 'No Repos', type: 'User', public_repos: 0, avatar_url: 'https://avatars.githubusercontent.com/u/3?v=4', html_url: 'https://github.com/norepos' },
+	'users/norepos/repos': [],
 	rate_limit: { resources: { core: { remaining: 60, limit: 60, reset: 2e9 }, search: { remaining: 10, limit: 10, reset: 2e9 } } },
 };
 
@@ -332,6 +334,14 @@ test('folders unfold in place in the Files tree', async () => {
 	await open(`${OTHER}/tree/main/src/lib`);
 	await page.waitForSelector('#files details[data-dir="src/lib"][open] a');
 	assert.equal(await page.locator('#files details[open]').count(), 2);
+});
+
+test('an owner without repos gets suggestions matching their name', async () => {
+	const queries = [];
+	page.on('request', r => { const u = new URL(r.url()); if (u.pathname === '/search/repositories') queries.push(u.searchParams.get('q')); });
+	await open('norepos');
+	await page.waitForSelector('#similar .card');
+	assert.ok(queries.some(q => q.startsWith('norepos in:name,description,topics')), 'searched on the name');
 });
 
 test('pasted GitHub URLs route to the right view', async () => {

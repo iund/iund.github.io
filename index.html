@@ -553,9 +553,11 @@ async function showOwner(owner, n, refresh) {
 		${top.length ? `<section><h2>Most starred</h2><div class="cards">${top.map(card).join('')}</div></section>` : ''}
 		${fresh.length ? `<section><h2>Recently updated</h2><div class="cards">${fresh.map(card).join('')}</div></section>` : '<p class="muted">No public repositories.</p>'}
 		${mine && GISTS.length ? `<section><h2>Gists</h2><div class="cards">${[...GISTS].sort(byTitle).map(gistCard).join('')}</div></section>` : ''}
-		${state.repos.length ? `<section id="all-repos"><h2>Repositories</h2><div class="cards"></div><div id="more-repos"></div></section><section id="similar" hidden><h2>Similar repositories</h2></section>` : ''}
+		${state.repos.length ? '<section id="all-repos"><h2>Repositories</h2><div class="cards"></div><div id="more-repos"></div></section>' : ''}<section id="similar"${state.repos.length ? ' hidden' : ''}><h2>Similar repositories</h2></section>
 		${mine ? built() : freshness(`users/${encodeURIComponent(owner)}/repos?per_page=100&sort=pushed`)}`;
 	if (state.repos.length) pageRepos(owner, mine ? MINE.length : u.public_repos, n, refresh);
+	// No repos to go on: suggest ones matching the owner's name instead.
+	else whenVisible($('#similar'), () => loadSimilar({ full_name: owner + '/', name: owner, words: owner.toLowerCase().split(/[^a-z\d]+/).filter(Boolean).slice(0, 3) }, n, refresh, x => same(x.owner.login, owner)));
 }
 // All of an owner's repos as tiles, most recently pushed first, 30 more each time the end comes into view.
 // Past the first 100, GitHub's next page is fetched (1 call per 100) only when reached. Similar repositories follow at the end.
@@ -773,7 +775,7 @@ const keywords = r => (((r.description || '') + ' ' + (r.name || r.full_name.spl
 // searches short of it ("all caught up"); each page is kept for a day.
 let similarNext = null;
 function loadSimilar(r, n, refresh, skip = x => same(x.full_name, r.full_name)) {
-	const sec = $('#similar'), lang = r.language ? ` language:"${r.language}"` : '', topics = r.topics || [], words = keywords(r).slice(0, 3);
+	const sec = $('#similar'), lang = r.language ? ` language:"${r.language}"` : '', topics = r.topics || [], words = r.words || keywords(r).slice(0, 3);
 	if (!topics.length && !words.length) return sec.insertAdjacentHTML('beforeend', '<p class="muted">Nothing to match on: no topics or descriptions.</p>');
 	const queries = [...new Set(topics.length
 		? [topics.slice(0, 2).map(t => 'topic:' + t).join(' ') + lang, 'topic:' + topics[0] + lang, 'topic:' + topics[0]]
