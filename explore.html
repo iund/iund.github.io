@@ -38,8 +38,12 @@
 		.toolbar .home { color: var(--text); text-decoration: none; font-size: 1.2em; }
 		.toolbar form { display: flex; gap: 0.4em; flex: 1 1 280px; max-width: 620px; }
 		.toolbar form input { flex: 1; }
-		#meter { margin-left: auto; font-size: 0.85em; color: var(--dim); font-variant-numeric: tabular-nums; }
-		#meter.low { color: var(--run); } #meter.out { color: var(--bad); }
+		#meter { margin-left: auto; display: inline-flex; align-items: center; gap: 0.6em; font-size: 0.85em; color: var(--dim); font-variant-numeric: tabular-nums; }
+		#meter .track { width: 80px; height: 6px; border-radius: 3px; background: var(--raise); overflow: hidden; }
+		#meter-fill { display: block; height: 100%; width: 0; background: var(--ok); transition: width 0.2s; }
+		#meter.low { color: var(--run); } #meter.low #meter-fill { background: var(--run); }
+		#meter.out { color: var(--bad); } #meter.out #meter-fill { background: var(--bad); }
+		@media (prefers-reduced-motion: reduce) { #meter-fill { transition: none; } }
 		#settings { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; padding: 0.6em 1em; background: var(--raise); border-bottom: 1px solid var(--line); }
 		#settings input { flex: 1 1 240px; max-width: 360px; }
 		#settings p { margin: 0; flex-basis: 100%; color: var(--dim); font-size: 0.9em; }
@@ -139,7 +143,7 @@
 			<input id="q" type="search" placeholder="user, owner/repo, GitHub URL or search words  ( / )" autocomplete="off" spellcheck="false" aria-label="User, repository, GitHub URL or search words">
 			<button class="btn" type="submit">Open</button>
 		</form>
-		<span id="meter" title="GitHub API calls left this hour"></span>
+		<span id="meter" title="GitHub API calls left this hour"><span id="meter-text"></span><span class="track"><span id="meter-fill"></span></span></span>
 		<button class="btn" id="token-btn" aria-expanded="false" aria-controls="settings">Token</button>
 	</header>
 	<form id="settings" hidden>
@@ -285,7 +289,8 @@ function meter(h) {
 }
 function setMeter(rem, lim, reset) {
 	const m = $('#meter');
-	m.textContent = `${num(rem)} / ${num(lim)} API calls · resets ${clock(reset)}`;
+	$('#meter-text').textContent = `${num(rem)} / ${num(lim)} API calls · resets ${clock(reset)}`;
+	$('#meter-fill').style.width = (lim ? 100 * rem / lim : 0) + '%';
 	m.className = rem === 0 ? 'out' : rem < lim * 0.2 ? 'low' : '';
 }
 function failure(e) {
