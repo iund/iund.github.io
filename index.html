@@ -87,7 +87,7 @@ layout: null
 		.head > div:first-child { flex: 1 1 320px; min-width: 0; }
 		.head p { margin: 0.3em 0; }
 		.clone { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4em; max-width: 440px; }
-		.head .clone { flex-direction: column; align-items: flex-end; max-width: none; }
+		.head .clone:has(.row) { flex-direction: column; align-items: flex-end; max-width: none; }
 		.clone .row { display: flex; gap: 0.4em; justify-content: flex-end; }
 		.topics { display: flex; flex-wrap: wrap; gap: 0.3em; margin-top: 0.5em; }
 		.topics a { font-size: 0.8em; border: 1px solid var(--line); border-radius: 999px; padding: 0.1em 0.6em; text-decoration: none; }
@@ -155,6 +155,11 @@ layout: null
 			.layout { grid-template-columns: 1fr; grid-template-rows: auto auto auto 1fr; height: auto; }
 			nav { grid-row: 3; max-height: 40vh; }
 			main { grid-row: 4; padding: 1em; }
+			/* Header and file buttons shrink to icons on one row; labels show again while they report something. */
+			.head .clone, .filehead .clone { flex-wrap: nowrap; }
+			:is(.head, .filehead) .clone :is(a, button) { font-size: 0; padding: 6px 8px; gap: 4px; }
+			:is(.head, .filehead) .clone svg { width: 16px; height: 16px; }
+			:is(.head, .filehead) .clone :is(.flash, .bad, [data-copy]) span { font-size: 14px; }
 		}
 		@media (prefers-reduced-motion: reduce) { .meter .track > span { transition: none; } }
 	</style>
@@ -920,7 +925,8 @@ const gistFail = e => e instanceof Response ? (e.status === 403 ? 'token lacks G
 function flash(b, text) {
 	const label = b.querySelector('span') || b, old = label.textContent;
 	label.textContent = text;
-	setTimeout(() => label.textContent = old, 1200);
+	b.classList.add('flash');
+	setTimeout(() => { label.textContent = old; b.classList.remove('flash'); }, 1200);
 }
 main.addEventListener('click', async e => {
 	const a = e.target.closest('.markdown-body a[href^="#"]');

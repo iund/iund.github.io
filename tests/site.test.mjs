@@ -347,6 +347,18 @@ test('an owner without repos gets suggestions matching their name', async () => 
 	assert.ok(queries.some(q => q.startsWith('norepos in:name,description,topics')), 'searched on the name');
 });
 
+test('header buttons stay on one row on a phone', async t => {
+	if (!data.repos.length) return t.skip('no repos');
+	await page.setViewportSize({ width: 360, height: 700 });
+	const rows = sel => page.$$eval(sel, els => new Set(els.map(e => Math.round(e.getBoundingClientRect().top))).size);
+	await open(OTHER);
+	assert.equal(await rows('main .head .clone .row:first-child > *'), 1);
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no sideways scrolling');
+	if (data.gists.length) { await open('gist/' + data.gists[0].id); assert.equal(await rows('main .head .clone > *'), 1); }
+	await page.setViewportSize({ width: 1280, height: 700 });
+	if (data.gists.length) assert.equal(await rows('main .head .clone > *'), 1, 'gist buttons stay on one row on desktop too');
+});
+
 test('pasted GitHub URLs route to the right view', async () => {
 	await open('');
 	for (const [input, hash] of [
