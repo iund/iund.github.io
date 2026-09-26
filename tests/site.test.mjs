@@ -15,12 +15,15 @@ const repo = (full, extra = {}) => ({
 	forks_count: 3, size: 2048, has_pages: true, is_template: false,
 	pushed_at: '2026-01-01T00:00:00Z', created_at: '2025-01-01T00:00:00Z', ...extra,
 });
+const MANY = Array.from({ length: 105 }, (_, i) => repo(`many/r${i}`, { pushed_at: new Date(2026, 0, 1, 0, 0, 105 - i).toISOString() }));
 const API = {
 	[`users/${OTHER.split('/')[0]}/repos`]: [repo(OTHER), repo('someone/plain', { topics: [], description: null }), repo('someone/forked', { fork: true })],
 	'repos/someone/forked': { ...repo('someone/forked', { fork: true }), parent: { full_name: OTHER } },
 	[`repos/${OTHER}/releases`]: [{ name: 'v1.1', tag_name: 'v1.1', draft: false, prerelease: false, published_at: '2026-02-02T00:00:00Z', body_html: '', assets: [] }, { name: 'v1.0', tag_name: 'v1.0', draft: false, prerelease: false, published_at: '2026-01-02T00:00:00Z', body_html: '<p>notes</p>',
 		assets: [{ name: 'tool.tar.gz', size: 2048, download_count: 5, browser_download_url: `https://github.com/${OTHER}/releases/download/v1.0/tool.tar.gz` }] }],
 	'search/repositories': { total_count: 2, items: [repo('big/famous', { stargazers_count: 50000 }), repo('tiny/gem', { stargazers_count: 5 })] },
+	'users/many': { login: 'many', name: 'Many Repos', type: 'User', public_repos: 105, avatar_url: 'https://avatars.githubusercontent.com/u/2?v=4', html_url: 'https://github.com/many' },
+	'users/many/repos': u => { const pg = +(u.searchParams.get('page') || 1); return MANY.slice((pg - 1) * 100, pg * 100); },
 	rate_limit: { resources: { core: { remaining: 60, limit: 60, reset: 2e9 }, search: { remaining: 10, limit: 10, reset: 2e9 } } },
 };
 
@@ -40,9 +43,9 @@ beforeEach(async () => {
 		'access-control-expose-headers': 'etag, x-ratelimit-remaining, x-ratelimit-limit, x-ratelimit-reset, x-ratelimit-resource' };
 	await ctx.route('https://api.github.com/**', route => {
 		if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
-		const path = new URL(route.request().url()).pathname.slice(1);
-		if (path !== 'rate_limit') calls.push(path);
-		const body = API[path];
+		const u = new URL(route.request().url()), path = u.pathname.slice(1);
+		if (path !== 'rate_limit') calls.push(path + (u.searchParams.get('page') > 1 ? '?page=' + u.searchParams.get('page') : ''));
+		const body = typeof API[path] === 'function' ? API[path](u) : API[path];
 		route.fulfill({ status: body ? 200 : 404, contentType: 'application/json', body: JSON.stringify(body ?? {}),
 			headers: { ...cors, 'x-ratelimit-remaining': '59', 'x-ratelimit-limit': '60', 'x-ratelimit-reset': '2000000000', 'x-ratelimit-resource': path.startsWith('search/') ? 'search' : 'core' } });
 	});
@@ -184,6 +187,24 @@ test('history and settings persist only after accepting storage', async () => {
 	await page.waitForLoadState('networkidle');
 	assert.ok(!(await page.$$eval('#history option', o => o.map(x => x.value))).includes('gem'), 'declining forgets earlier searches');
 	assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), ['explore-consent']);
+});
+
+test("an owner's repos page in as you scroll, then Similar appears at the end", async () => {
+	await page.setViewportSize({ width: 1280, height: 600 });
+	await open('many');
+	const tiles = () => page.locator('#all-repos .card').count();
+	const scroll = () => page.$eval('main', m => m.scrollTop = m.scrollHeight);
+	assert.equal(await tiles(), 30);
+	assert.equal(await page.isVisible('#similar'), false);
+	for (const want of [60, 90, 100]) { await scroll(); await page.waitForFunction(w => document.querySelectorAll('#all-repos .card').length >= w, want); }
+	assert.ok(!calls.includes('users/many/repos?page=2'), 'second page only when reached');
+	await scroll();
+	await page.waitForFunction(() => document.querySelectorAll('#all-repos .card').length === 105);
+	assert.ok(calls.includes('users/many/repos?page=2'));
+	assert.equal(await page.textContent('#all-repos .card b >> nth=0'), 'many/r0', 'most recently pushed first');
+	await scroll();
+	await page.waitForSelector('#similar .card');
+	assert.ok((await page.$$eval('#similar .card b', bs => bs.map(b => b.textContent))).every(n => !n.startsWith('many/')), 'Similar leaves out the owner');
 });
 
 test('pasted GitHub URLs route to the right view', async () => {
