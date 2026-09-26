@@ -29,6 +29,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # jekyll-build-pages writes _site as root; top-level names are safe to mangle as nothing refers to them from markup.
+      - name: Minify
+        run: |
+          sudo chown -R "$(id -u)" _site
+          npm install --no-save html-minifier-terser@7.2.0
+          for f in _site/*.html; do
+            npx html-minifier-terser --collapse-whitespace --conservative-collapse --remove-comments --minify-css true \
+              --minify-js '{"compress":{"toplevel":true},"mangle":{"toplevel":true}}' -o "$f.min" "$f" && mv "$f.min" "$f"
+          done
       - name: Install Playwright
         run: npm install --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
       - name: Test
