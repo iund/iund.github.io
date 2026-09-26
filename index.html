@@ -367,7 +367,7 @@ function settle() {
 	if (el) nav.scrollTop += el.getBoundingClientRect().top - anchor.top;
 }
 function addRecent(r) {
-	const list = [{ full_name: r.full_name, description: r.description, language: r.language, stargazers_count: r.stargazers_count, license: r.license, topics: r.topics },
+	const list = [{ name: r.name, full_name: r.full_name, description: r.description, language: r.language, stargazers_count: r.stargazers_count, license: r.license, topics: r.topics },
 		...ls.get('explore-recent', []).filter(x => x.full_name !== r.full_name)].slice(0, 20);
 	ls.set('explore-recent', list);
 	fill('recent', list, { full: true, empty: 'Repositories you open appear here.' });
@@ -572,7 +572,8 @@ function fixLinks(el, r) {
 }
 
 const STOP = new Set('the and for with from that this your into over using based simple small tool tools library written code project app application'.split(' '));
-const keywords = r => (((r.description || '') + ' ' + r.name.replace(/[-_.]/g, ' ')).toLowerCase().match(/[a-z][a-z\d]{3,}/g) || []).filter(w => !STOP.has(w)).slice(0, 4);
+// Recent entries saved before names were stored only have full_name, so fall back to it.
+const keywords = r => (((r.description || '') + ' ' + (r.name || r.full_name.split('/')[1]).replace(/[-_.]/g, ' ')).toLowerCase().match(/[a-z][a-z\d]{3,}/g) || []).filter(w => !STOP.has(w)).slice(0, 4);
 // Search calls have their own limit and don't use the hourly allowance; results are kept for a day.
 async function loadSimilar(r, n, refresh) {
 	const key = 'similar ' + r.full_name;

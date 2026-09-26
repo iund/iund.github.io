@@ -15,7 +15,7 @@ const repo = (full, extra = {}) => ({
 	pushed_at: '2026-01-01T00:00:00Z', created_at: '2025-01-01T00:00:00Z', ...extra,
 });
 const API = {
-	[`users/${OTHER.split('/')[0]}/repos`]: [repo(OTHER), repo('someone/other')],
+	[`users/${OTHER.split('/')[0]}/repos`]: [repo(OTHER), repo('someone/plain', { topics: [], description: null })],
 	[`repos/${OTHER}/releases`]: [{ name: 'v1.0', tag_name: 'v1.0', draft: false, prerelease: false, published_at: '2026-01-02T00:00:00Z', body_html: '<p>notes</p>',
 		assets: [{ name: 'tool.tar.gz', size: 2048, download_count: 5, browser_download_url: `https://github.com/${OTHER}/releases/download/v1.0/tool.tar.gz` }] }],
 	'search/repositories': { total_count: 2, items: [repo('big/famous', { stargazers_count: 50000 }), repo('tiny/gem', { stargazers_count: 5 })] },
@@ -116,6 +116,12 @@ test("another user's repo loads live, with Similar only once scrolled into view"
 	await page.$eval('main', m => m.scrollTop = m.scrollHeight);
 	await page.waitForSelector('#similar .card');
 	assert.ok(calls.slice(before).every(c => c.startsWith('search/')), 'Similar uses search only');
+});
+
+test('repos without topics or descriptions open and feed Discover', async () => {
+	await open('someone/plain');
+	await open(OTHER);
+	assert.match(await page.textContent('#releases'), /v1\.0/);
 });
 
 test('pasted GitHub URLs route to the right view', async () => {
