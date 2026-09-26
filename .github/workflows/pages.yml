@@ -5,6 +5,7 @@ on:
     - cron: '17 */12 * * *'
   push:
     branches: [master]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -13,7 +14,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -25,9 +26,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - uses: actions/jekyll-build-pages@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright
+        run: npm install --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
+      - name: Test
+        run: |
+          python3 -m http.server 8000 -d _site &
+          until curl -s -o /dev/null http://localhost:8000; do sleep 1; done
+          node --test --test-reporter=spec tests/*.test.mjs
       - uses: actions/upload-pages-artifact@v3
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

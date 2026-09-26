@@ -1,2 +1,2 @@
 theme: null
-exclude: [README.md]
+exclude: [README.md, tests, node_modules]
