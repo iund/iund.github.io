@@ -38,12 +38,13 @@
 		.toolbar .home { color: var(--text); text-decoration: none; font-size: 1.2em; }
 		.toolbar form { display: flex; gap: 0.4em; flex: 1 1 280px; max-width: 620px; }
 		.toolbar form input { flex: 1; }
-		#meter { margin-left: auto; display: inline-flex; align-items: center; gap: 0.6em; font-size: 0.85em; color: var(--dim); font-variant-numeric: tabular-nums; }
-		#meter .track { width: 80px; height: 6px; border-radius: 3px; background: var(--raise); overflow: hidden; }
-		#meter-fill { display: block; height: 100%; width: 0; background: var(--ok); transition: width 0.2s; }
-		#meter.low { color: var(--run); } #meter.low #meter-fill { background: var(--run); }
-		#meter.out { color: var(--bad); } #meter.out #meter-fill { background: var(--bad); }
-		@media (prefers-reduced-motion: reduce) { #meter-fill { transition: none; } }
+		#meters { margin-left: auto; display: grid; gap: 0.15em; justify-items: end; }
+		.meter { display: inline-flex; align-items: center; gap: 0.6em; font-size: 0.85em; color: var(--dim); font-variant-numeric: tabular-nums; }
+		.meter .track { width: 80px; height: 6px; border-radius: 3px; background: var(--raise); overflow: hidden; }
+		.meter .track > span { display: block; height: 100%; width: 0; background: var(--ok); transition: width 0.2s; }
+		.meter.low { color: var(--run); } .meter.low .track > span { background: var(--run); }
+		.meter.out { color: var(--bad); } .meter.out .track > span { background: var(--bad); }
+		@media (prefers-reduced-motion: reduce) { .meter .track > span { transition: none; } }
 		#settings { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; padding: 0.6em 1em; background: var(--raise); border-bottom: 1px solid var(--line); }
 		#settings input { flex: 1 1 240px; max-width: 360px; }
 		#settings p { margin: 0; flex-basis: 100%; color: var(--dim); font-size: 0.9em; }
@@ -143,7 +144,7 @@
 			<input id="q" type="search" placeholder="user, owner/repo, GitHub URL or search words  ( / )" autocomplete="off" spellcheck="false" aria-label="User, repository, GitHub URL or search words">
 			<button class="btn" type="submit">Open</button>
 		</form>
-		<span id="meter" title="GitHub API calls left this hour"><span id="meter-text"></span><span class="track"><span id="meter-fill"></span></span></span>
+		<span id="meters"><span class="meter" id="meter" title="GitHub API calls left this hour"><span id="meter-text"></span><span class="track"><span id="meter-fill"></span></span></span><span class="meter" id="smeter" title="GitHub searches left this minute (search box, Similar and Discover)"><span id="smeter-text"></span><span class="track"><span id="smeter-fill"></span></span></span></span>
 		<button class="btn" id="token-btn" aria-expanded="false" aria-controls="settings">Token</button>
 	</header>
 	<form id="settings" hidden>
@@ -283,15 +284,25 @@ async function request(path, { accept = JSON_T, text = false, method = 'GET', et
 }
 function meter(h) {
 	const rem = h.get('x-ratelimit-remaining');
-	if (h.get('x-ratelimit-resource') === 'search' && rem != null) { search.left = +rem; search.reset = h.get('x-ratelimit-reset') * 1000; return; }
+	if (h.get('x-ratelimit-resource') === 'search' && rem != null) return setSearchMeter(+rem, +h.get('x-ratelimit-limit'), +h.get('x-ratelimit-reset'));
 	if (h.get('x-ratelimit-resource') && h.get('x-ratelimit-resource') !== 'core') return;
 	if (rem != null) setMeter(+rem, +h.get('x-ratelimit-limit'), +h.get('x-ratelimit-reset'));
 }
+function bar(id, rem, lim, text) {
+	$(id + '-text').textContent = text;
+	$(id + '-fill').style.width = (lim ? 100 * rem / lim : 0) + '%';
+	$(id).className = 'meter' + (rem === 0 ? ' out' : rem < lim * 0.2 ? ' low' : '');
+}
+// Search allowance refills every minute; show it full again once the reset time passes.
+let searchTimer;
+function setSearchMeter(rem, lim, reset) {
+	search.left = rem; search.reset = reset * 1000;
+	bar('#smeter', rem, lim, `${rem} / ${lim} searches · resets ${new Date(reset * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`);
+	clearTimeout(searchTimer);
+	if (rem < lim) searchTimer = setTimeout(() => { search.left = lim; bar('#smeter', lim, lim, `${lim} / ${lim} searches this minute`); }, Math.max(0, search.reset - Date.now()) + 500);
+}
 function setMeter(rem, lim, reset) {
-	const m = $('#meter');
-	$('#meter-text').textContent = `${num(rem)} / ${num(lim)} API calls · resets ${clock(reset)}`;
-	$('#meter-fill').style.width = (lim ? 100 * rem / lim : 0) + '%';
-	m.className = rem === 0 ? 'out' : rem < lim * 0.2 ? 'low' : '';
+	bar('#meter', rem, lim, `${num(rem)} / ${num(lim)} API calls · resets ${clock(reset)}`);
 }
 function failure(e) {
 	if (e instanceof Response) {
@@ -864,7 +875,10 @@ async function useToken(t) {
 $('#settings').addEventListener('submit', e => { e.preventDefault(); const t = $('#token').value.trim(); $('#token').value = ''; if (t) useToken(t); });
 $('#token-clear').addEventListener('click', () => useToken(''));
 function rate() {
-	request('rate_limit').then(({ d }) => setMeter(d.resources.core.remaining, d.resources.core.limit, d.resources.core.reset)).catch(() => {});
+	request('rate_limit').then(({ d }) => {
+		setMeter(d.resources.core.remaining, d.resources.core.limit, d.resources.core.reset);
+		setSearchMeter(d.resources.search.remaining, d.resources.search.limit, d.resources.search.reset);
+	}).catch(() => {});
 }
 
 $('#consent-yes').addEventListener('click', () => setConsent('yes'));
