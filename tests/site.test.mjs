@@ -114,7 +114,8 @@ test('gists open from the build', async t => {
 	await open('gist/' + g.id);
 	assert.equal(await page.locator('main .filehead').count(), g.files.length);
 	assert.equal(await page.locator('[data-sec="gists"] a.active').count(), 1);
-	assert.equal(await page.evaluate(() => document.fonts.load('16px Iosevka').then(f => f.length)), 1, 'Iosevka loads from the site');
+	assert.equal(await page.evaluate(() => document.fonts.load('16px Iosevka', 'a').then(f => f.length)), 1, 'Iosevka loads from the site');
+	assert.equal(await page.evaluate(() => document.fonts.load('16px Iosevka', 'Ж').then(f => f.length)), 1, 'Cyrillic and other scripts load on demand');
 	assert.deepEqual(apiCalls(), []);
 });
 
