@@ -55,6 +55,7 @@
 		nav a:hover { background: var(--raise); }
 		nav a.active { background: var(--active); }
 		nav small, nav .desc, .muted { color: var(--dim); }
+		nav small .tag { font-size: 0.9em; }
 		nav .line { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 		nav .note { color: var(--dim); font-size: 0.9em; margin: 0.2em 0.5em; }
 
@@ -271,7 +272,7 @@ function parse(input) {
 
 const lic = r => r.license && r.license.spdx_id && r.license.spdx_id !== 'NOASSERTION' ? esc(r.license.spdx_id) : '';
 function repoLink(r, full) {
-	return `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${[lic(r), esc(r.language || '')].filter(Boolean).join(' · ')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}</small></a>`;
+	return `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${lic(r) ? `<span class="tag">${lic(r)}</span> ` : ''}${esc(r.language || '')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}</small></a>`;
 }
 function card(r) {
 	return `<a class="card" href="#${esc(r.full_name)}"><b>${esc(r.full_name)}</b><span class="d">${esc(r.description || '')}</span><small>${esc(r.language || '')}${r.language ? ' · ' : ''}★ ${num(r.stargazers_count)} · updated ${day(r.pushed_at)}</small></a>`;
