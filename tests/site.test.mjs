@@ -116,6 +116,7 @@ test('gists open from the build', async t => {
 	await open('gist/' + g.id);
 	assert.equal(await page.locator('main .filehead').count(), g.files.length);
 	assert.equal(await page.locator('[data-sec="gists"] a.active').count(), 1);
+	assert.deepEqual(await page.$$eval('main .head [data-copy]', bs => bs.map(b => b.dataset.copy)), [`git@gist.github.com:${g.id}.git`, `https://gist.github.com/${g.id}.git`]);
 	assert.equal(await page.evaluate(() => document.fonts.load('16px Iosevka', 'a').then(f => f.length)), 1, 'Iosevka loads from the site');
 	assert.equal(await page.evaluate(() => document.fonts.load('16px Iosevka', 'Ж').then(f => f.length)), 1, 'Cyrillic and other scripts load on demand');
 	assert.deepEqual(apiCalls(), []);
