@@ -269,8 +269,9 @@ function parse(input) {
 	return '~search/' + encodeURIComponent(text);
 }
 
+const lic = r => r.license && r.license.spdx_id && r.license.spdx_id !== 'NOASSERTION' ? esc(r.license.spdx_id) : '';
 function repoLink(r, full) {
-	return `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${esc(r.language || '')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}</small></a>`;
+	return `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${[lic(r), esc(r.language || '')].filter(Boolean).join(' · ')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}</small></a>`;
 }
 function card(r) {
 	return `<a class="card" href="#${esc(r.full_name)}"><b>${esc(r.full_name)}</b><span class="d">${esc(r.description || '')}</span><small>${esc(r.language || '')}${r.language ? ' · ' : ''}★ ${num(r.stargazers_count)} · updated ${day(r.pushed_at)}</small></a>`;
@@ -294,7 +295,7 @@ function highlight() {
 
 function addRecent(r) {
 	const list = ls.get('explore-recent', []).filter(x => x.full_name !== r.full_name);
-	list.unshift({ full_name: r.full_name, description: r.description, language: r.language, stargazers_count: r.stargazers_count });
+	list.unshift({ full_name: r.full_name, description: r.description, language: r.language, stargazers_count: r.stargazers_count, license: r.license });
 	ls.set('explore-recent', list.slice(0, 20));
 	fillSection('#sec-recent', null, ls.get('explore-recent', []), true, 'Repositories you open appear here.');
 }
@@ -397,11 +398,10 @@ async function showRepo(owner, name, at, n, refresh) {
 	state.repo = r; state.files = null;
 	$('#q').value = r.full_name;
 	highlight(); addRecent(r);
-	const lic = r.license && r.license.spdx_id && r.license.spdx_id !== 'NOASSERTION' ? r.license.spdx_id : '';
 	main.innerHTML = `<div class="head"><div>
 			<h1>${esc(r.name)}${r.fork ? ' <span class="tag">fork</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}</h1>
 			${r.description ? `<p>${esc(r.description)}</p>` : ''}
-			<p class="muted"><a href="#${esc(r.owner.login)}">${esc(r.owner.login)}</a>${[r.language, '★ ' + num(r.stargazers_count), lic, 'updated ' + day(r.pushed_at)].filter(Boolean).map(x => ' · ' + esc(x)).join('')}${r.homepage ? ` · <a href="${esc(r.homepage)}" target="_blank" rel="noopener">${esc(r.homepage.replace(/^https?:\/\//, ''))}</a>` : ''}</p>
+			<p class="muted"><a href="#${esc(r.owner.login)}">${esc(r.owner.login)}</a>${[esc(r.language), '★ ' + num(r.stargazers_count), lic(r), 'updated ' + day(r.pushed_at)].filter(Boolean).map(x => ' · ' + x).join('')}${r.homepage ? ` · <a href="${esc(r.homepage)}" target="_blank" rel="noopener">${esc(r.homepage.replace(/^https?:\/\//, ''))}</a>` : ''}</p>
 			${r.topics && r.topics.length ? `<div class="topics">${r.topics.map(t => `<a href="#~topic/${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
 		</div>
 		<div class="clone">
