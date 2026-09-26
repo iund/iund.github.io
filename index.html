@@ -123,8 +123,14 @@ layout: null
 		.filehead h2 { margin: 0.4em 0 0; }
 		.age { font-size: 0.85em; margin-top: 2em; }
 		pre { background: var(--raise); padding: 1em; overflow-x: auto; }
-		pre, code, .crumbs, .tree a { font-family: "Iosevka", monospace; font-feature-settings: "ss12"; font-size-adjust: 0.454; }
+		pre, code, textarea.code, .crumbs, .tree a { font-family: "Iosevka", monospace; font-feature-settings: "ss12"; font-size-adjust: 0.454; }
 		pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+		textarea.code { display: block; box-sizing: border-box; width: 100%; min-height: 6em; resize: vertical; background: var(--raise); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1em; font-size: 1em; tab-size: 4; }
+		input.title { display: block; box-sizing: border-box; width: 100%; font: bold 2em "Bariol", sans-serif; border: 0; border-radius: 0; background: none; padding: 0; margin: 0 0 0.2em; }
+		.filehead input.fname { font: bold 1.5em "Bariol", sans-serif; border: 0; border-radius: 0; background: none; padding: 0; margin: 0.4em 0 0; flex: 1 1 240px; max-width: 520px; }
+		.clone button.dirty { color: var(--run); border-color: currentColor; }
+		nav summary .add { font: inherit; line-height: 1; color: var(--text); background: var(--raise); border: 1px solid var(--line); border-radius: 4px; padding: 0 0.4em; cursor: pointer; }
+		nav summary .add:hover { background: var(--active); }
 		.crumbs { margin-bottom: 0.5em; overflow-wrap: anywhere; }
 		.markdown-body img { max-width: 100%; }
 		.markdown-body .anchor { display: none; }
@@ -151,8 +157,8 @@ layout: null
 		<button class="btn" id="token-btn" aria-expanded="false" aria-controls="settings">Token</button>
 	</header>
 	<form id="settings" hidden>
-		<label for="token" title="Raises the API limit from 60 to 5,000 calls an hour, turns on starring and your Starred list, and shows your access to each repository. Create a fine-grained token with Public repositories (read-only) access and the account permission Starring: read and write. To also list your private repositories, choose All repositories with Contents, Metadata and Actions: read-only. It is only sent to api.github.com.">Personal access token</label>
-		<input id="token" type="password" autocomplete="off" placeholder="github_pat_…" title="Fine-grained token: Public repositories (read-only), Starring: read and write. For private repositories: All repositories, Contents, Metadata and Actions: read-only">
+		<label for="token" title="Raises the API limit from 60 to 5,000 calls an hour, turns on starring and your Starred list, and shows your access to each repository. Create a fine-grained token with Public repositories (read-only) access and the account permission Starring: read and write. To also list your private repositories, choose All repositories with Contents, Metadata and Actions: read-only. To add and edit your gists, add Gists: read and write (the gist scope on a classic token). It is only sent to api.github.com.">Personal access token</label>
+		<input id="token" type="password" autocomplete="off" placeholder="github_pat_…" title="Fine-grained token: Public repositories (read-only), Starring: read and write. For private repositories: All repositories, Contents, Metadata and Actions: read-only. For gists: Gists: read and write (classic: gist scope)">
 		<button class="btn">Save</button>
 		<button class="btn" type="button" id="token-clear">Clear</button>
 		<p id="token-status"></p>
@@ -160,12 +166,12 @@ layout: null
 	</form>
 	<nav>
 		<input id="filter" type="search" placeholder="Filter lists" aria-label="Filter lists" autocomplete="off">
-		<details data-sec="mine" open><summary><span></span><span></span></summary><div></div></details>
+		<details data-sec="mine" open><summary><span></span></summary><div></div></details>
 		<details data-sec="gists" open><summary><span>Gists</span><span></span></summary><div></div></details>
-		<details data-sec="stars" open hidden><summary><span>Starred</span><span></span></summary><div></div></details>
-		<details data-sec="recent" open><summary><span>Recent</span><span></span></summary><div></div></details>
-		<details data-sec="owner" open hidden><summary><span></span><span></span></summary><div></div></details>
-		<details data-sec="discover" open><summary title="Suggestions that mix famous projects with small ones, tuned in this browser by what you open, star, copy and download"><span>Discover</span><span></span></summary>
+		<details data-sec="stars" open hidden><summary><span>Starred</span></summary><div></div></details>
+		<details data-sec="recent" open><summary><span>Recent</span></summary><div></div></details>
+		<details data-sec="owner" open hidden><summary><span></span></summary><div></div></details>
+		<details data-sec="discover" open><summary title="Suggestions that mix famous projects with small ones, tuned in this browser by what you open, star, copy and download"><span>Discover</span></summary>
 			<div id="disc-list"></div>
 			<p class="note" id="disc-status"></p>
 			<p class="note"><button class="btn" id="disc-more">More suggestions</button></p>
@@ -187,8 +193,8 @@ layout: null
 // Built data (your profile, repos, gists) comes from the 12-hourly build; everything else is fetched live.
 const SITE = JSON.parse(document.getElementById('site-data').textContent);
 const OWNER = (SITE.user && SITE.user.login) || 'iund';
-const BUILT = SITE.repos || [], GISTS = SITE.gists || [];
-let MINE = BUILT;
+const BUILT = SITE.repos || [];
+let MINE = BUILT, GISTS = SITE.gists || [];
 const svg = d => `<svg viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`;
 const ICON = {
 	eye: svg('<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>'),
@@ -199,6 +205,9 @@ const ICON = {
 	actions: svg('<circle cx="8" cy="8" r="6"/><path d="M6.5 5.5v5l4-2.5z"/>'),
 	readme: svg('<path d="M2 3h4.5A1.5 1.5 0 0 1 8 4.5V14a1.5 1.5 0 0 0-1.5-1.5H2zM14 3H9.5A1.5 1.5 0 0 0 8 4.5V14a1.5 1.5 0 0 1 1.5-1.5H14z"/>'),
 	similar: svg('<circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 7l4-2M6 9l4 2"/>'),
+	save: svg('<path d="M3 2h8l2.5 2.5V13a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5 2v4h5V2M5 14V9.5h6V14"/>'),
+	del: svg('<path d="M2.5 4h11M6 4V2.5h4V4m-5.5 0 .6 9.5h5.8l.6-9.5M6.8 6.5v5m2.4-5v5"/>'),
+	plus: svg('<path d="M8 3v10M3 8h10"/>'),
 	files: svg('<path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H6l1.5 1.5h5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z"/>'),
 };
 const JSON_T = 'application/vnd.github+json', HTML_T = 'application/vnd.github.html+json';
@@ -255,10 +264,12 @@ const ls = {
 const slimRepo = r => ({ name: r.name, full_name: r.full_name, owner: { login: r.owner.login, avatar_url: r.owner.avatar_url }, description: r.description, language: r.language,
 	stargazers_count: r.stargazers_count, forks_count: r.forks_count, size: r.size, has_pages: r.has_pages, is_template: r.is_template, parent: r.parent && r.parent.full_name, fork: r.fork, private: r.private, permissions: r.permissions, archived: r.archived, topics: r.topics, license: r.license && { spdx_id: r.license.spdx_id },
 	default_branch: r.default_branch, html_url: r.html_url, ssh_url: r.ssh_url, clone_url: r.clone_url, homepage: r.homepage, pushed_at: r.pushed_at, created_at: r.created_at });
+const slimGist = g => ({ id: g.id, owner: g.owner.login, description: g.description, html_url: g.html_url, updated_at: g.updated_at, public: g.public,
+	files: Object.values(g.files).map(f => ({ filename: f.filename, language: f.language, raw_url: f.raw_url })) });
 const slimRelease = x => ({ name: x.name, tag_name: x.tag_name, draft: x.draft, prerelease: x.prerelease, published_at: x.published_at, body_html: x.body_html,
 	assets: x.assets.map(a => ({ name: a.name, size: a.size, download_count: a.download_count, browser_download_url: a.browser_download_url })) });
 
-let token = ls.get('explore-token', ''), me = ls.get('explore-me', null), starred = ls.get('explore-starred', null);
+let token = ls.get('explore-token', ''), me = ls.get('explore-me', null), scopes = ls.get('explore-scopes', null), starred = ls.get('explore-starred', null);
 const state = { owner: null, repos: [], repo: null, gist: null, files: null };
 let seq = 0, refreshSeq = -1;
 const search = { left: null, reset: 0 }, SEARCH_RESERVE = 2;
@@ -290,12 +301,15 @@ function gh(path, { accept = JSON_T, text = false, ttl = HOUR, refresh = false, 
 	p.catch(() => mem.delete(key));
 	return p;
 }
-async function request(path, { accept = JSON_T, text = false, method = 'GET', etag = null } = {}) {
+async function request(path, { accept = JSON_T, text = false, method = 'GET', etag = null, body } = {}) {
 	const headers = { Accept: accept };
 	if (token) headers.Authorization = 'Bearer ' + token;
 	if (etag) headers['If-None-Match'] = etag;
-	const r = await fetch('https://api.github.com/' + path, { method, headers, cache: 'no-store' });
+	const r = await fetch('https://api.github.com/' + path, { method, headers, cache: 'no-store', body: body && JSON.stringify(body) });
 	meter(r.headers);
+	// Classic tokens list their scopes on every response; fine-grained ones don't.
+	const sc = r.headers.get('x-oauth-scopes');
+	if (token && sc != null && sc !== scopes) ls.set('explore-scopes', scopes = sc);
 	if (r.status === 304) return { notModified: true };
 	if (r.status === 204) return { d: true };
 	if (r.status === 404) return { d: null };
@@ -356,12 +370,18 @@ const priv = r => r.private ? '<span class="tag">private</span> ' : '';
 const repoLink = (r, full, extra = '') => `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${priv(r)}${lic(r) ? `<span class="tag">${lic(r)}</span> ` : ''}${esc(r.language || '')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}${extra}</small></a>`;
 const card = r => `<a class="card" href="#${esc(r.full_name)}"><b>${esc(r.full_name)}</b><span class="d">${esc(r.description || '')}</span><small>${priv(r)}${esc(r.language || '')}${r.language ? ' · ' : ''}★ ${num(r.stargazers_count)} · updated ${when(r.pushed_at)}</small></a>`;
 const gistTitle = g => g.description || (g.files[0] || {}).filename || g.id;
+const byTitle = (a, b) => gistTitle(a).localeCompare(gistTitle(b), undefined, { sensitivity: 'base' });
+// Only a gist's owner can edit it; a classic token must also have the gist scope.
+const canGist = () => !!token && !!me && isOwner(me) && (scopes == null || /\bgist\b/.test(scopes));
+function showGists() {
+	fill('gists', [...GISTS].sort(byTitle), { empty: 'No gists.', html: g => `<a href="#gist/${esc(g.id)}" data-full="gist/${esc(g.id)}"><span class="line">${esc(gistTitle(g))}</span>${g.public === false ? '<small><span class="tag">secret</span></small>' : ''}</a>` });
+	$('[data-sec="gists"] > summary > span:last-child').innerHTML = canGist() ? '<button class="add" id="gist-new" title="New gist">+</button>' : '';
+}
 const gistCard = g => `<a class="card" href="#gist/${esc(g.id)}"><b>${esc(gistTitle(g))}</b><span class="d">${esc(g.files.map(f => f.filename).join(', '))}</span><small>${[...new Set(g.files.map(f => f.language).filter(Boolean))].map(esc).join(', ')}${g.files.some(f => f.language) ? ' · ' : ''}${g.files.length} file${g.files.length === 1 ? '' : 's'} · updated ${when(g.updated_at)}</small></a>`;
 function fill(sec, items, { title, full, empty, html } = {}) {
 	const el = $(`[data-sec="${sec}"]`);
 	el.hidden = false;
 	if (title != null) el.querySelector('span').textContent = title;
-	el.querySelector(':scope > summary > span:last-child').textContent = items ? items.length : '';
 	el.querySelector(':scope > div').innerHTML = !items ? '<p class="note">Loading…</p>' : items.map(html || (r => repoLink(r, full))).join('') || `<p class="note">${empty}</p>`;
 	applyFilter(); highlight(); settle();
 }
@@ -422,6 +442,18 @@ async function loadMine() {
 			if (part.length < 100) break;
 		}
 	} catch { all = null; }
+	let gists = null;
+	if (canGist()) try {
+		gists = [];
+		for (let page = 1; page <= 10; page++) {
+			const part = await gh(`gists?per_page=100&page=${page}`, { map: d => d && d.map(slimGist) });
+			if (!part) throw 0;
+			gists.push(...part);
+			if (part.length < 100) break;
+		}
+	} catch { gists = null; }
+	GISTS = gists || SITE.gists || [];
+	showGists();
 	MINE = all ? all.map(r => { const b = BUILT.find(x => same(x.full_name, r.full_name)); return b ? { ...b, private: r.private, permissions: r.permissions } : r; }) : BUILT;
 	fill('mine', MINE, { title: OWNER, empty: 'No repositories.' });
 }
@@ -437,6 +469,7 @@ async function route() {
 		}
 		if (raw.startsWith('~topic/')) return await showSearch('topic:' + decodeURIComponent(raw.slice(7)), decodeURIComponent(raw.slice(7)), n);
 		const p = decodeURIComponent(raw).split('/');
+		if (p[0] === 'gist' && p[1] === 'new' && canGist()) return newGist();
 		if (p[0] === 'gist' && GISTS.some(g => g.id === p[1])) return showGist(p[1]);
 		if (p[0] === 'repo' && isMine(OWNER + '/' + p[1])) return location.replace(`#${OWNER}/${p[1]}`);
 		if (!raw) return location.replace('#' + OWNER);
@@ -494,7 +527,7 @@ async function showOwner(owner, n, refresh) {
 		<div class="clone">${ext(u.html_url, ICON.eye + 'github', 'View on GitHub')}</div></div>
 		${top.length ? `<section><h2>Most starred</h2><div class="cards">${top.map(card).join('')}</div></section>` : ''}
 		${fresh.length ? `<section><h2>Recently updated</h2><div class="cards">${fresh.map(card).join('')}</div></section>` : '<p class="muted">No public repositories.</p>'}
-		${mine && GISTS.length ? `<section><h2>Gists</h2><div class="cards">${[...GISTS].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).map(gistCard).join('')}</div></section>` : ''}
+		${mine && GISTS.length ? `<section><h2>Gists</h2><div class="cards">${[...GISTS].sort(byTitle).map(gistCard).join('')}</div></section>` : ''}
 		${state.repos.length ? `<section id="all-repos"><h2>Repositories</h2><div class="cards"></div><div id="more-repos"></div></section><section id="similar" hidden><h2>Similar repositories</h2></section>` : ''}
 		${mine ? built() : freshness(`users/${encodeURIComponent(owner)}/repos?per_page=100&sort=pushed`)}`;
 	if (state.repos.length) pageRepos(owner, mine ? MINE.length : u.public_repos, n, refresh);
@@ -764,22 +797,47 @@ function loadFile(body, url, name, bytes, headers) {
 		if (img) return body.innerHTML = `<img src="${dl.href}" alt="${esc(name)}" style="max-width:100%">`;
 		const t = await b.text();
 		if (/\u0000/.test(t.slice(0, 8000))) return body.innerHTML = '<p class="muted">Binary file. Use download.</p>';
-		body.innerHTML = '<pre class="wrap"></pre>';
-		body.firstChild.textContent = t;
+		body.innerHTML = body.classList.contains('edit') ? `<textarea class="code" spellcheck="false" rows="${Math.min(30, t.split('\n').length + 1)}"></textarea>` : '<pre class="wrap"></pre>';
+		body.firstChild[body.classList.contains('edit') ? 'value' : 'textContent'] = t;
 	}, () => body.innerHTML = `<p class="muted">Could not load this file. <a href="${esc(url)}">Open raw</a></p>`);
 }
 
-// ---- Gist view (built list; file contents load from raw URLs) ----
+// ---- Gist view (built list, or live with your token; file contents load from raw URLs) ----
+// With your token, the description, filenames and contents are editable, and each file saves on its own.
+const fileSec = (f, can) => `<section data-file="${esc(f.filename)}"><div class="filehead">${can ? `<input class="fname" value="${esc(f.filename)}" placeholder="filename including extension…" aria-label="File name" spellcheck="false">` : `<h2>${esc(f.filename)}</h2>`}<div class="clone">
+	${can ? btn('save', 'save', 'data-save-file title="Save this file to the gist"') : ''}${btn('copy', 'copy', 'data-copy-file title="Copy contents"')}<a ${f.raw_url ? `href="${esc(f.raw_url)}" ` : ''}download="${esc(f.filename)}" title="Download ${esc(f.filename)}">${ICON.dl}download</a>${can ? btn('del', 'delete', 'data-del-file title="Delete this file from the gist"') : ''}</div></div>
+	<div class="file-body${can ? ' edit' : ''}">${f.raw_url ? '' : '<textarea class="code" spellcheck="false"></textarea>'}</div></section>`;
 function showGist(id) {
-	const g = GISTS.find(x => x.id === id);
+	const g = GISTS.find(x => x.id === id), can = canGist();
 	view(gistTitle(g), { gist: id }, true);
 	setQ('');
-	main.innerHTML = `<div class="head"><div><h1>${esc(gistTitle(g))}</h1><p class="muted">updated ${when(g.updated_at)}</p></div>
-		<div class="clone">${ext(g.html_url, ICON.eye + 'github', 'View on GitHub')}<a href="https://gist.github.com/${esc(g.owner)}/${esc(g.id)}/archive/HEAD.zip" title="Download ZIP">${ICON.dl}zip</a></div></div>` +
-		g.files.map(f => `<section><div class="filehead"><h2>${esc(f.filename)} <small class="muted">${esc(f.language || '')}</small></h2><div class="clone">
-			${btn('copy', 'copy', 'data-copy-file title="Copy contents"')}<a href="${esc(f.raw_url)}" download="${esc(f.filename)}" title="Download ${esc(f.filename)}">${ICON.dl}download</a></div></div><div class="file-body"></div></section>`).join('');
+	main.innerHTML = `<div class="head"><div>${can ? `<input class="title" id="gdesc" value="${esc(g.description || '')}" placeholder="Add a description" aria-label="Description" spellcheck="false">` : `<h1>${esc(gistTitle(g))}</h1>`}<p class="muted" id="gist-status">${g.public === false ? 'secret · ' : ''}updated ${when(g.updated_at)}</p></div>
+		<div class="clone">${can ? btn('plus', 'add file', 'id="gist-add" title="Add another file to this gist"') : ''}${ext(g.html_url, ICON.eye + 'github', 'View on GitHub')}<a href="https://gist.github.com/${esc(g.owner)}/${esc(g.id)}/archive/HEAD.zip" title="Download ZIP">${ICON.dl}zip</a></div></div>` +
+		g.files.map(f => fileSec(f, can)).join('');
 	main.querySelectorAll('.file-body').forEach((b, i) => loadFile(b, g.files[i].raw_url, g.files[i].filename));
 }
+function newGist() {
+	view('New gist', null, true);
+	setQ('');
+	main.innerHTML = `<div class="head"><div><h1>New gist</h1><p><input id="gdesc" placeholder="Description (optional)" aria-label="Description" style="width:100%;box-sizing:border-box"></p><p><label><input type="checkbox" id="gpublic" checked> public</label></p></div>
+		<div class="clone">${btn('plus', 'add file', 'id="gist-add" title="Add another file"')}${btn('save', 'create', 'id="gist-create" title="Create the gist"')}</div></div>` + fileSec({ filename: '' }, true);
+}
+// Writes go straight to GitHub; the answer replaces the listed gist and the cached list is dropped.
+function setGists(list) {
+	GISTS = list;
+	store.keys().filter(k => k.includes(' gists?')).forEach(store.remove);
+	[...mem.keys()].filter(k => k.includes(' gists?')).forEach(k => mem.delete(k));
+	showGists();
+}
+async function writeGist(path, method, body) {
+	const { d } = await request(path, { method, body });
+	if (!d) throw new Error('token lacks Gists');
+	if (d === true) return setGists(GISTS.filter(x => 'gists/' + x.id !== path));
+	const g = slimGist(d);
+	setGists([...GISTS.filter(x => x.id !== g.id), g]);
+	return g;
+}
+const gistFail = e => e instanceof Response ? (e.status === 403 ? 'token lacks Gists' : e.status === 422 ? 'rejected' : 'failed') : e.message;
 
 // ---- Clicks in the right pane ----
 function flash(b, text) {
@@ -802,6 +860,46 @@ main.addEventListener('click', async e => {
 		if (t.tagName === 'DETAILS') t.open = true;
 		return t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 	}
+	if (b.id === 'gist-add') { main.insertAdjacentHTML('beforeend', fileSec({ filename: '' }, true)); return main.querySelector('section:last-of-type .fname').focus(); }
+	if ('saveFile' in b.dataset) {
+		const sec = b.closest('section'), old = sec.dataset.file, name = sec.querySelector('.fname').value.trim(), ta = sec.querySelector('textarea');
+		if (!name || !ta) return flash(b, name ? 'not text' : 'name?');
+		b.disabled = true;
+		try {
+			const g = await writeGist('gists/' + state.gist, 'PATCH', { files: { [old || name]: { filename: name, content: ta.value } } });
+			const f = g.files.find(x => x.filename === name);
+			sec.dataset.file = name;
+			if (f) Object.assign(sec.querySelector('a[download]'), { href: f.raw_url, download: name });
+			b.classList.remove('dirty');
+			flash(b, 'saved');
+		} catch (err) { flash(b, gistFail(err)); }
+		b.disabled = false;
+		return;
+	}
+	if ('delFile' in b.dataset) {
+		const sec = b.closest('section'), label = b.querySelector('span');
+		const last = !!sec.dataset.file && $$('main section[data-file]').filter(x => x.dataset.file).length === 1;
+		if (label.textContent === 'delete') {
+			label.textContent = last ? 'delete gist?' : 'confirm';
+			b.classList.add('bad');
+			return setTimeout(() => { label.textContent = 'delete'; b.classList.remove('bad'); }, 3000);
+		}
+		if (!sec.dataset.file) return sec.remove();
+		try {
+			if (last) { await writeGist('gists/' + state.gist, 'DELETE'); return location.hash = OWNER; }
+			await writeGist('gists/' + state.gist, 'PATCH', { files: { [sec.dataset.file]: null } });
+			sec.remove();
+		} catch (err) { flash(b, gistFail(err)); }
+		return;
+	}
+	if (b.id === 'gist-create') {
+		const files = Object.fromEntries($$('main section').map(x => [x.querySelector('.fname').value.trim(), { content: x.querySelector('textarea').value }]).filter(([n]) => n));
+		if (!Object.keys(files).length) return flash(b, 'name a file');
+		b.disabled = true;
+		try { location.hash = 'gist/' + (await writeGist('gists', 'POST', { description: $('#gdesc').value.trim(), public: $('#gpublic').checked, files })).id; }
+		catch (err) { flash(b, gistFail(err)); b.disabled = false; }
+		return;
+	}
 	if (b.id === 'refresh') { refreshSeq = seq + 1; state.owner = null; return route(); }
 	if (b.id === 'star') {
 		const r = state.repo, on = b.classList.contains('on');
@@ -817,9 +915,18 @@ main.addEventListener('click', async e => {
 		b.disabled = false;
 		return;
 	}
-	const text = 'copyFile' in b.dataset ? b.closest('section, #files').querySelector('.file-body pre')?.textContent : b.dataset.copy;
+	const text = 'copyFile' in b.dataset ? (el => el && (el.value ?? el.textContent))(b.closest('section, #files').querySelector('.file-body :is(pre, textarea)')) : b.dataset.copy;
 	if (text == null) return;
 	try { await navigator.clipboard.writeText(text); flash(b, 'copied'); if (b.dataset.copy && state.repo) learn(state.repo, 3); } catch { flash(b, 'copy failed'); }
+});
+
+main.addEventListener('input', e => e.target.closest('section')?.querySelector('[data-save-file]')?.classList.add('dirty'));
+main.addEventListener('keydown', e => e.key === 'Enter' && e.target.id === 'gdesc' && e.target.blur());
+main.addEventListener('change', async e => {
+	if (e.target.id !== 'gdesc' || !state.gist) return;
+	const st = $('#gist-status');
+	try { const g = await writeGist('gists/' + state.gist, 'PATCH', { description: e.target.value.trim() }); document.title = `${gistTitle(g)} · ${OWNER}`; st.textContent = 'description saved'; }
+	catch (err) { st.textContent = gistFail(err); }
 });
 
 // ---- Discover ----
@@ -891,7 +998,6 @@ function plan() {
 	disc.I = I;
 }
 const discStatus = t => $('#disc-status').textContent = t;
-const discCount = () => $('[data-sec="discover"] summary span:last-child').textContent = $('#disc-list').children.length || '';
 // Stop before the search allowance runs out, keeping a couple of searches for the search box and Similar.
 const caughtUp = () => $('#disc-status').innerHTML = `<b>✓ You're all caught up.</b><br>More suggestions after ${clock(Math.max(search.reset, Date.now() + 1000) / 1000, true)}.`;
 async function discover(reset) {
@@ -959,7 +1065,6 @@ async function more(n) {
 	const isNew = r => r.created_at && Date.now() - Date.parse(r.created_at) < 120 * DAY;
 	$('#disc-list').insertAdjacentHTML('beforeend', picked.map(({ c: { r, why } }) =>
 		`<div class="sug">${repoLink(r, true, `${r.stargazers_count >= 10000 ? ' <span class="tag star">famous</span>' : r.stargazers_count < 50 ? ' <span class="tag blue">gem</span>' : ''}${isNew(r) ? ' <span class="tag ok">new</span>' : ''} · ${esc(why.join(', '))}`)}<button class="x" data-hide="${esc(r.full_name)}" title="Not interested">✕</button></div>`).join(''));
-	discCount();
 	applyFilter(); highlight();
 	disc.busy = false;
 	if ((wait || (search.left != null && search.left <= SEARCH_RESERVE && Date.now() < search.reset)) && !disc.buffer.size) return caughtUp();
@@ -974,9 +1079,9 @@ nav.addEventListener('click', e => {
 	ls.set('explore-hidden', [...ls.get('explore-hidden', []), k].slice(-500));
 	learn(disc.items.get(k), -1);
 	x.closest('.sug').remove();
-	discCount();
 });
 nav.addEventListener('scroll', () => { if (nav.scrollTop + nav.clientHeight > nav.scrollHeight - 300 && $('[data-sec="discover"]').open && disc.I) more(2); }, { passive: true });
+nav.addEventListener('click', e => { if (e.target.closest('#gist-new')) { e.preventDefault(); location.hash = 'gist/new'; } });
 $('#disc-more').addEventListener('click', () => more(2));
 $('#disc-mix').addEventListener('click', () => discover(true));
 $('#disc-reset').addEventListener('click', () => {
@@ -1007,7 +1112,8 @@ $('#token-btn').addEventListener('click', () => {
 });
 const tokenLabel = () => $('#token-btn').textContent = token ? `Token: ${me || 'saved'}` : 'Token';
 async function useToken(t) {
-	token = t; me = null; starred = null;
+	token = t; me = null; starred = null; scopes = null;
+	ls.set('explore-scopes', null);
 	ls.set('explore-starred', null);
 	$('#token-status').textContent = '';
 	if (t) {
@@ -1029,7 +1135,7 @@ $$('.consent-open').forEach(b => b.addEventListener('click', () => $('#consent')
 if (!consent) $('#consent').hidden = false;
 
 fill('mine', MINE, { title: OWNER, empty: 'No repositories.' });
-fill('gists', GISTS, { empty: 'No public gists.', html: g => `<a href="#gist/${esc(g.id)}" data-full="gist/${esc(g.id)}"><span class="line">${esc(gistTitle(g))}</span></a>` });
+showGists();
 fill('recent', ls.get('explore-recent', []), { full: true, empty: 'Repositories you open appear here.' });
 addEventListener('hashchange', route);
 fillHistory();

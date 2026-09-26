@@ -42,15 +42,16 @@ after(() => browser.close());
 beforeEach(async () => {
 	calls = []; errors = [];
 	const ctx = await browser.newContext();
-	const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET, PUT, DELETE',
-		'access-control-expose-headers': 'etag, x-ratelimit-remaining, x-ratelimit-limit, x-ratelimit-reset, x-ratelimit-resource' };
+	const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET, PUT, PATCH, POST, DELETE',
+		'access-control-expose-headers': 'etag, x-ratelimit-remaining, x-ratelimit-limit, x-ratelimit-reset, x-ratelimit-resource, x-oauth-scopes' };
 	await ctx.route('https://api.github.com/**', route => {
 		if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
 		const u = new URL(route.request().url()), path = u.pathname.slice(1);
-		if (path !== 'rate_limit') calls.push(path + (u.searchParams.get('page') > 1 ? '?page=' + u.searchParams.get('page') : ''));
-		const body = typeof API[path] === 'function' ? API[path](u) : API[path];
+		const method = route.request().method();
+		if (path !== 'rate_limit') calls.push((method === 'GET' ? '' : method + ' ') + path + (u.searchParams.get('page') > 1 ? '?page=' + u.searchParams.get('page') : ''));
+		const body = typeof API[path] === 'function' ? API[path](u, route.request()) : API[path];
 		route.fulfill({ status: body ? 200 : 404, contentType: 'application/json', body: JSON.stringify(body ?? {}),
-			headers: { ...cors, 'x-ratelimit-remaining': '59', 'x-ratelimit-limit': '60', 'x-ratelimit-reset': '2000000000', 'x-ratelimit-resource': path.startsWith('search/') ? 'search' : 'core' } });
+			headers: { ...cors, 'x-ratelimit-remaining': '59', 'x-ratelimit-limit': '60', 'x-ratelimit-reset': '2000000000', 'x-ratelimit-resource': path.startsWith('search/') ? 'search' : 'core', ...(route.request().headers().authorization && { 'x-oauth-scopes': 'gist, repo' }) } });
 	});
 	await ctx.route('https://raw.githubusercontent.com/**', route => route.fulfill({ headers: { 'access-control-allow-origin': '*' }, body: '# Tool\n\nHello from the README.' }));
 	if (process.env.CDN_DIR) await ctx.route('https://cdn.jsdelivr.net/npm/**', route => {
@@ -223,12 +224,57 @@ test('your own token lists private repos and shows your access', async t => {
 	await open(`${me}/secret/blob/main/a.txt`);
 	assert.match(await page.textContent('main h1'), /secret private/);
 	assert.match(await page.textContent('#access'), /Your access: admin · settings · new release · edit/);
+	await page.waitForSelector('#actions li .tag');
 	assert.match(await page.textContent('#actions'), /success CI/);
 	assert.match(await page.textContent('#files .file-body pre'), /hello/);
 	await open(OTHER);
 	await page.waitForSelector('#access:has-text("read")');
 	assert.equal(await page.textContent('#access'), 'Your access: read');
 	assert.equal(calls.filter(c => c === 'user/repos').length, 1);
+});
+
+test('your own token adds, edits and deletes gists, sorted by title', async () => {
+	const me = data.user.login, sent = [];
+	await page.addInitScript(me => Object.entries({ 'explore-consent': 'yes', 'explore-token': '"tok"', 'explore-me': JSON.stringify(me) }).forEach(([k, v]) => localStorage.setItem(k, v)), me);
+	const gist = (id, files, extra = {}) => ({ id, owner: { login: me }, description: 'Zed notes', html_url: `https://gist.github.com/${id}`, updated_at: '2026-01-01T00:00:00Z', public: true,
+		files: Object.fromEntries(files.map(f => [f, { filename: f, language: null, raw_url: `https://raw.githubusercontent.com/g/${id}/${f}` }])), ...extra });
+	API.gists = (u, req) => {
+		if (req.method() !== 'POST') return [gist('z1', ['a.txt', 'b.txt']), gist('a2', ['c.txt'], { description: 'alpha', public: false })];
+		const b = req.postDataJSON(); sent.push(b);
+		return gist('new1', Object.keys(b.files), { description: b.description });
+	};
+	API['gists/z1'] = (u, req) => {
+		const b = req.postDataJSON(); sent.push(b);
+		return gist('z1', ['a.txt', 'b.txt'].filter(f => !b.files || b.files[f] !== null).map(f => b.files?.[f]?.filename || f), b.description != null ? { description: b.description } : {});
+	};
+	await open('gist/z1');
+	assert.deepEqual(await page.$$eval('[data-sec="gists"] a .line', as => as.map(a => a.textContent)), ['alpha', 'Zed notes']);
+	assert.equal(await page.locator('[data-sec="gists"] summary #gist-new').count(), 1);
+	assert.equal(await page.locator('nav summary > span:nth-child(2):not(:empty)').count(), 1, 'only the gist + is left in the list headings');
+	assert.equal(await page.inputValue('main section >> nth=0 >> .fname'), 'a.txt');
+	await page.waitForSelector('main section >> nth=0 >> textarea');
+	assert.match(await page.inputValue('main section >> nth=0 >> textarea'), /Hello/);
+	await page.fill('main section >> nth=0 >> textarea', 'new text');
+	await page.fill('main section >> nth=0 >> .fname', 'a2.txt');
+	await page.click('main section >> nth=0 >> [data-save-file]');
+	await page.waitForSelector('main section[data-file="a2.txt"]');
+	assert.deepEqual(sent.at(-1), { files: { 'a.txt': { filename: 'a2.txt', content: 'new text' } } });
+	await page.click('main section >> nth=1 >> [data-del-file]');
+	await page.click('main section >> nth=1 >> [data-del-file]');
+	await page.waitForFunction(() => document.querySelectorAll('main section').length === 1);
+	assert.deepEqual(sent.at(-1), { files: { 'b.txt': null } });
+	await page.fill('#gdesc', 'Zed notes 2');
+	await page.press('#gdesc', 'Enter');
+	await page.waitForSelector('#gist-status:has-text("saved")');
+	assert.deepEqual(sent.at(-1), { description: 'Zed notes 2' });
+	await page.click('#gist-new');
+	await page.waitForSelector('#gist-create');
+	assert.equal(await page.isChecked('#gpublic'), true);
+	await page.fill('main section .fname', 'n.txt');
+	await page.fill('main section textarea', 'x');
+	await page.click('#gist-create');
+	await page.waitForFunction(() => location.hash === '#gist/new1');
+	assert.deepEqual(sent.at(-1), { description: '', public: true, files: { 'n.txt': { content: 'x' } } });
 });
 
 test('pasted GitHub URLs route to the right view', async () => {
