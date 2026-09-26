@@ -92,8 +92,8 @@ test('your repos open from the build with all sections and buttons', async t => 
 	const r = data.repos[0];
 	await open(r.full_name);
 	assert.equal(await page.textContent('main h1 >> nth=0'), r.name + (r.fork ? ' fork' : '') + (r.archived ? ' archived' : ''));
-	const labels = await page.$$eval('main .head .clone > :not(.sep)', els => els.map(e => e.textContent.trim()));
-	assert.deepEqual(labels, ['star', 'fork', 'github', 'ssh', 'https', 'zip', 'releases', 'actions', 'readme', 'files']);
+	const rows = await page.$$eval('main .head .clone .row', rs => rs.map(r => [...r.children].map(e => e.textContent.trim())));
+	assert.deepEqual(rows, [['star', 'fork', 'github', 'ssh', 'https', 'zip'], ['releases', 'actions', 'readme', 'files']]);
 	assert.deepEqual(await page.$$eval('main > section > h2', hs => hs.map(h => h.textContent)), ['Releases', 'Actions', 'README']);
 	assert.equal(await page.locator('#readme script').count(), 0, 'README is sanitised');
 	assert.deepEqual(apiCalls(), []);
@@ -229,7 +229,9 @@ test('your own token lists private repos and turns your access into buttons', as
 	await open(`${me}/secret/blob/main/a.txt`);
 	assert.match(await page.textContent('main h1'), /secret private/);
 	await page.waitForSelector('#actions [data-run]');
-	assert.deepEqual(await page.$$eval('main .head .clone > :not(.sep)', els => els.slice(0, 4).map(e => e.textContent.trim())), ['vscode', 'settings', 'star', 'github'], 'no fork button on your own repo');
+	assert.deepEqual(await page.$$eval('main .head .clone .row > *', els => els.slice(0, 4).map(e => e.textContent.trim())), ['vscode', 'edit', 'star', 'github'], 'no fork button on your own repo');
+	const tops = await page.$$eval('main .head .clone .row:first-child > *', els => new Set(els.map(e => Math.round(e.getBoundingClientRect().top))).size);
+	assert.equal(tops, 1, 'the action buttons stay on one row');
 	assert.deepEqual(await page.$$eval('#actions [data-run]', bs => bs.map(b => b.textContent.trim())), ['Pages'], 'only workflows with workflow_dispatch');
 	assert.equal(await page.textContent('#releases > h2 .clone'), 'release');
 	await page.click('#actions [data-run]');
@@ -246,7 +248,7 @@ test('your own token lists private repos and turns your access into buttons', as
 	await page.waitForFunction(() => document.querySelector('#readme h2'));
 	await page.waitForTimeout(300);
 	assert.ok(calls.includes(`repos/${OTHER}`), 'permissions fetched');
-	assert.equal(await page.locator('main .head a:has-text("settings"), main .head a:has-text("vscode"), input#rdesc').count(), 0, 'read access adds no buttons');
+	assert.equal(await page.locator('main .head a:has-text("edit"), main .head a:has-text("vscode"), input#rdesc').count(), 0, 'read access adds no buttons');
 	API[`repos/${OTHER}/forks`] = { ...repo(`${me}/tool`, { fork: true }), permissions: { admin: true, push: true, pull: true } };
 	await page.click('#fork');
 	await page.waitForFunction(me => location.hash === `#${me}/tool`, me);
@@ -304,6 +306,21 @@ test('your own token adds, edits and deletes gists, sorted by title', async () =
 	await page.click('#gist-create');
 	await page.waitForFunction(() => location.hash === '#gist/new1');
 	assert.deepEqual(sent.at(-1), { description: '', public: true, files: { 'n.txt': { content: 'x' } } });
+});
+
+test('folders unfold in place in the Files tree', async () => {
+	API[`repos/${OTHER}/git/trees/main`] = { truncated: false, tree: [{ path: 'README.md', type: 'blob', size: 9 }, { path: 'src', type: 'tree' }, { path: 'src/lib', type: 'tree' }, { path: 'src/lib/x.go', type: 'blob', size: 3 }, { path: 'src/main.go', type: 'blob', size: 5 }] };
+	await open(OTHER);
+	await page.click('#files > summary');
+	await page.waitForSelector('#files details[data-dir="src"]');
+	await page.click('#files details[data-dir="src"] > summary');
+	await page.click('#files details[data-dir="src/lib"] > summary');
+	await page.waitForSelector('#files details[data-dir="src/lib"] a');
+	assert.deepEqual(await page.$$eval('#files .tree a, #files .tree summary', els => els.map(e => e.textContent)), ['src/', 'lib/', 'x.go', 'main.go', 'README.md']);
+	assert.equal(new URL(page.url()).hash, '#' + OTHER, 'unfolding keeps the view');
+	await open(`${OTHER}/tree/main/src/lib`);
+	await page.waitForSelector('#files details[data-dir="src/lib"][open] a');
+	assert.equal(await page.locator('#files details[open]').count(), 2);
 });
 
 test('pasted GitHub URLs route to the right view', async () => {

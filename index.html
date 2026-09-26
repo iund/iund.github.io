@@ -84,7 +84,8 @@ layout: null
 		.head > div:first-child { flex: 1 1 320px; min-width: 0; }
 		.head p { margin: 0.3em 0; }
 		.clone { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4em; max-width: 440px; }
-		.clone .sep { flex-basis: 100%; }
+		.head .clone { flex-direction: column; align-items: flex-end; max-width: none; }
+		.clone .row { display: flex; gap: 0.4em; justify-content: flex-end; }
 		.topics { display: flex; flex-wrap: wrap; gap: 0.3em; margin-top: 0.5em; }
 		.topics a { font-size: 0.8em; border: 1px solid var(--line); border-radius: 999px; padding: 0.1em 0.6em; text-decoration: none; }
 		.empty { color: var(--dim); max-width: 50ch; }
@@ -117,13 +118,18 @@ layout: null
 		#files[open] > summary::before { content: "▾ "; }
 		.tree { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: 4px; }
 		.tree li + li { border-top: 1px solid var(--line); }
-		.tree a { display: block; padding: 0.3em 0.7em; color: var(--text); text-decoration: none; }
-		.tree a:hover { background: var(--raise); }
+		.tree a, .tree summary { display: block; padding: 0.3em 0.7em; color: var(--text); text-decoration: none; }
+		.tree a:hover, .tree summary:hover { background: var(--raise); }
+		.tree summary { cursor: pointer; list-style: none; }
+		.tree summary::-webkit-details-marker { display: none; }
+		.tree summary::before { content: "▸ "; color: var(--dim); }
+		.tree details[open] > summary::before { content: "▾ "; }
+		.tree .tree { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding-left: 1.2em; }
 		.filehead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 0.5em; margin: 0.6em 0; }
 		.filehead h2 { margin: 0.4em 0 0; }
 		.age { font-size: 0.85em; margin-top: 2em; }
 		pre { background: var(--raise); padding: 1em; overflow-x: auto; }
-		pre, code, textarea.code, .crumbs, .tree a { font-family: "Iosevka", monospace; font-feature-settings: "ss12"; font-size-adjust: 0.454; }
+		pre, code, textarea.code, .crumbs, .tree a, .tree summary { font-family: "Iosevka", monospace; font-feature-settings: "ss12"; font-size-adjust: 0.454; }
 		pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 		textarea.code { display: block; box-sizing: border-box; width: 100%; min-height: 6em; resize: vertical; background: var(--raise); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1em; font-size: 1em; tab-size: 4; }
 		input.title { display: block; box-sizing: border-box; width: 100%; font: bold 2em "Bariol", sans-serif; border: 0; border-radius: 0; background: none; padding: 0; margin: 0 0 0.2em; }
@@ -644,15 +650,14 @@ async function showRepo(owner, name, at, n, refresh) {
 			].filter(Boolean).join(' · ')}</p>
 			${r.topics && r.topics.length ? `<div class="topics">${r.topics.map(t => `<a href="#~topic/${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
 		</div>
-		<div class="clone">
+		<div class="clone"><span class="row">
 			${btn('star', 'star', token ? 'id="star"' : 'id="star" disabled title="Save a token under Token to star repositories"')}
 			${me && same(r.owner.login, me) ? '' : btn('fork', 'fork', token ? `id="fork" title="Fork into ${esc(me || 'your account')}"` : 'id="fork" disabled title="Save a token under Token to fork repositories"')}
 			${ext(r.html_url, ICON.eye + 'github', 'View on GitHub')}
 			${btn('copy', 'ssh', `data-copy="${esc(r.ssh_url)}" title="Copy ${esc(r.ssh_url)}"`)}
 			${btn('copy', 'https', `data-copy="${esc(r.clone_url)}" title="Copy ${esc(r.clone_url)}"`)}
 			<a href="${esc(r.html_url)}/archive/refs/heads/${encodeURIComponent(r.default_branch)}.zip" title="Download the ${esc(r.default_branch)} branch as ZIP">${ICON.dl}zip</a>
-			<span class="sep"></span>
-			${sections.map(s => btn(s, s, `data-jump="${s}" title="Jump to ${s}"`)).join('')}
+			</span><span class="row">${sections.map(s => btn(s, s, `data-jump="${s}" title="Jump to ${s}"`)).join('')}</span>
 		</div></div>
 		<section id="releases"><h2>Releases</h2><p class="muted">Loading…</p></section>
 		${mine ? '<section id="actions"><h2>Actions</h2><p class="muted">Loading…</p></section>' : ''}
@@ -663,6 +668,8 @@ async function showRepo(owner, name, at, n, refresh) {
 	if (token) setStar(isStarred(r));
 	if (token) access(r, n, refresh);
 	$('#files').addEventListener('toggle', e => e.target.open && !e.target.querySelector('div').innerHTML && openFiles({ kind: 'tree', ref: r.default_branch, path: '' }));
+	// Folders unfold in place; their contents are rendered when first opened.
+	$('#files').addEventListener('toggle', e => { const d = e.target; if (d.dataset.dir && d.open && !d.querySelector('ul')) d.insertAdjacentHTML('beforeend', treeList(d.dataset.dir + '/')); }, true);
 	if (at) openFiles(at, true);
 	await Promise.all([
 		part('releases', n, async () => releasesHTML(r, r.releases || await gh(`repos/${r.full_name}/releases?per_page=6`, { accept: HTML_T, refresh, map: d => d && d.map(slimRelease) }))),
@@ -695,7 +702,7 @@ function setStar(on) {
 async function access(r, n, refresh) {
 	const p = r.permissions || ((await gh(`repos/${r.full_name}`, { refresh, map: d => d && slimRepo(d) }).catch(() => null)) || {}).permissions;
 	if (!p || n !== seq) return;
-	$('main .head .clone').insertAdjacentHTML('afterbegin', (p.push ? ext(`https://vscode.dev/github/${r.full_name}`, ICON.code + 'vscode', 'Open in vscode.dev') : '') + (p.admin ? ext(r.html_url + '/settings', ICON.gear + 'settings', 'Repository settings') : ''));
+	$('main .head .clone .row').insertAdjacentHTML('afterbegin', (p.push ? ext(`https://vscode.dev/github/${r.full_name}`, ICON.code + 'vscode', 'Open in vscode.dev') : '') + (p.admin ? ext(r.html_url + '/settings', ICON.gear + 'edit', 'Repository settings') : ''));
 	if (p.admin) $('#rdesc').outerHTML = `<p class="edit"><input id="rdesc" value="${esc(r.description || '')}" placeholder="Add a description" aria-label="Description" spellcheck="false"><span class="muted" id="rdesc-status"></span></p>`;
 	if (!p.push) return;
 	$('#releases > h2').insertAdjacentHTML('beforeend', `<span class="clone">${ext(r.html_url + '/releases/new', ICON.plus + 'release', 'Draft a new release')}</span>`);
@@ -793,9 +800,9 @@ async function openFiles(at, scroll) {
 			state.files = { ref, ...t };
 		} catch (e) { return box.innerHTML = `<p class="muted">${e instanceof Response && e.status === 409 ? 'This repository is empty.' : esc(failure(e))}</p>`; }
 	}
-	const { tree, truncated } = state.files, base = esc(`#${r.full_name}/`), path = at.path || '', segs = path ? path.split('/') : [];
-	const link = (kind, p, text) => `<a href="${base}${kind}/${esc(ref)}${p ? '/' + esc(p) : ''}">${text}</a>`;
-	const crumbs = `<div class="crumbs">${link('tree', '', esc(r.name))}${segs.map((s, i) => ' / ' + link(i === segs.length - 1 && at.kind === 'blob' ? 'blob' : 'tree', segs.slice(0, i + 1).join('/'), esc(s))).join('')} <span class="muted">(${esc(ref)})</span></div>`;
+	const { tree, truncated } = state.files, path = at.path || '', segs = path ? path.split('/') : [];
+	const link = (kind, p, text) => `<a href="${esc(`#${r.full_name}/${kind}/${ref}`)}${p ? '/' + esc(p) : ''}">${text}</a>`;
+	const crumbs = `<div class="crumbs">${link('tree', '', esc(r.name))}${at.kind === 'blob' ? segs.map((s, i) => ' / ' + link(i === segs.length - 1 ? 'blob' : 'tree', segs.slice(0, i + 1).join('/'), esc(s))).join('') : ''} <span class="muted">(${esc(ref)})</span></div>`;
 	if (at.kind === 'blob') {
 		const item = tree.find(x => x.path === path), name = segs[segs.length - 1];
 		const rawUrl = r.private ? `https://api.github.com/repos/${r.full_name}/contents/${segs.map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}` : `https://raw.githubusercontent.com/${r.full_name}/${encodeURIComponent(ref)}/${segs.map(encodeURIComponent).join('/')}`;
@@ -805,13 +812,20 @@ async function openFiles(at, scroll) {
 			${ext(`${r.html_url}/blob/${ref}/${path}`, ICON.eye + 'github', 'View on GitHub')}</div></div><div class="file-body"></div>`;
 		loadFile(box.querySelector('.file-body'), rawUrl, name, item && item.size, r.private && { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github.raw+json' });
 	} else {
-		const prefix = path ? path + '/' : '';
-		const kids = tree.filter(x => x.path.startsWith(prefix) && !x.path.slice(prefix.length).includes('/'))
-			.sort((a, b) => a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'tree' ? -1 : 1);
-		box.innerHTML = crumbs + (truncated ? '<p class="muted">This repository is very large; some files are not listed.</p>' : '') +
-			`<ul class="tree">${path ? `<li>${link('tree', segs.slice(0, -1).join('/'), '..')}</li>` : ''}${kids.map(x => `<li>${link(x.type === 'tree' ? 'tree' : 'blob', x.path, (x.type === 'tree' ? '▸ ' : '  ') + esc(x.path.slice(prefix.length)) + (x.type === 'tree' ? '/' : ''))}</li>`).join('')}</ul>`;
+		// A tree link opens the whole tree with the folders on its path unfolded.
+		const open = new Set(segs.map((s, i) => segs.slice(0, i + 1).join('/')));
+		box.innerHTML = crumbs + (truncated ? '<p class="muted">This repository is very large; some files are not listed.</p>' : '') + treeList('', open);
 	}
 	if (scroll) det.scrollIntoView({ block: 'start' });
+}
+// One folder level of the loaded tree, folders first; folders in `open` are unfolded.
+function treeList(prefix, open = new Set()) {
+	const r = state.repo, { tree, ref } = state.files;
+	const kids = tree.filter(x => x.path.startsWith(prefix) && !x.path.slice(prefix.length).includes('/'))
+		.sort((a, b) => a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'tree' ? -1 : 1);
+	return `<ul class="tree">${kids.map(x => { const name = esc(x.path.slice(prefix.length)); return `<li>${x.type === 'tree'
+		? `<details data-dir="${esc(x.path)}"${open.has(x.path) ? ' open' : ''}><summary>${name}/</summary>${open.has(x.path) ? treeList(x.path + '/', open) : ''}</details>`
+		: `<a href="${esc(`#${r.full_name}/blob/${ref}/${x.path}`)}">${name}</a>`}</li>`; }).join('')}</ul>`;
 }
 // Shows a raw file (free; private repos go through the contents API with the token, 1 call); once loaded,
 // the download link points at the loaded file so it saves under its own name.
