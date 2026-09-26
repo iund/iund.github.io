@@ -6,7 +6,6 @@ layout: null
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="color-scheme" content="light dark">
-	<link rel="stylesheet" href="stylesheet.css">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/iosevka@5.3.0/400.css">
 	<title>{{ site.data.user.login | default: "iund" }}</title>
 	<style>
@@ -22,7 +21,8 @@ layout: null
 				--text: #0f1f2f; --dim: #50657a; --link: #1d5aa6; --ok: #1e7a3c; --bad: #b3261e; --run: #856a00; --star: #9a5b00;
 			}
 		}
-		body { margin: 0; text-align: left; background: var(--main); color: var(--text); }
+		@font-face { font-family: "Bariol"; src: url("fonts/Bariol Regular Webfont/bariol_regular-webfont.woff2") format("woff2"), url("fonts/Bariol Regular Webfont/bariol_regular-webfont.woff") format("woff"); }
+		body { margin: 0; font-family: "Bariol", sans-serif; background: var(--main); color: var(--text); }
 		a { color: var(--link); }
 		[hidden] { display: none !important; }
 		input { font: inherit; color: var(--text); background: var(--main); border: 1px solid var(--line); border-radius: 4px; padding: 0.35em 0.6em; min-width: 0; }
@@ -44,8 +44,7 @@ layout: null
 		.toolbar .home svg { width: 1.3em; height: 1.3em; fill: currentColor; stroke: none; }
 		.toolbar form { display: flex; gap: 0.4em; flex: 1 1 280px; max-width: 620px; }
 		.toolbar form input { flex: 1; }
-		#meters { margin-left: auto; display: grid; gap: 0.15em; justify-items: end; }
-		.meter { display: inline-flex; align-items: center; gap: 0.6em; font-size: 0.85em; color: var(--dim); font-variant-numeric: tabular-nums; }
+		.meter { margin-left: auto; display: inline-flex; align-items: center; gap: 0.6em; font-size: 0.85em; color: var(--dim); font-variant-numeric: tabular-nums; }
 		.meter .track { width: 80px; height: 6px; border-radius: 3px; background: var(--raise); overflow: hidden; }
 		.meter .track > span { display: block; height: 100%; width: 0; background: var(--ok); transition: width 0.2s; }
 		.meter.low { color: var(--run); } .meter.low .track > span { background: var(--run); }
@@ -143,9 +142,7 @@ layout: null
 			<input id="q" type="search" placeholder="user, owner/repo, GitHub URL or search words  ( / )" autocomplete="off" spellcheck="false" aria-label="User, repository, GitHub URL or search words">
 			<button class="btn">Open</button>
 		</form>
-		<span id="meters">
-			<span class="meter" id="m-api" title="GitHub API calls left this hour"><span></span><span class="track"><span></span></span></span>
-		</span>
+		<span class="meter" id="meter" title="GitHub API calls left this hour"><span></span><span class="track"><span></span></span></span>
 		<button class="btn" id="token-btn" aria-expanded="false" aria-controls="settings">Token</button>
 	</header>
 	<form id="settings" hidden>
@@ -210,7 +207,9 @@ const clock = (s, sec) => new Date(s * 1000).toLocaleTimeString([], { hour: '2-d
 const ago = t => { const m = Math.round((Date.now() - t) / MIN); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
 const ext = (href, html, title = '') => `<a href="${esc(href)}" target="_blank" rel="noopener" title="${esc(title)}">${html}</a>`;
 const btn = (icon, label, attrs = '') => `<button ${attrs}>${ICON[icon] || ''}<span>${label}</span></button>`;
-const isMine = full => MINE.find(r => r.full_name.toLowerCase() === full.toLowerCase());
+const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+const isOwner = owner => same(owner, OWNER);
+const isMine = full => MINE.some(r => same(r.full_name, full));
 
 // Storage persists only after the visitor accepts; until then (or after declining) it lives in memory for this visit.
 let consent = null;
@@ -260,10 +259,6 @@ function evict() {
 	return aged.length > 0;
 }
 const mem = new Map();
-function forget(part) {
-	[...mem.keys()].filter(k => k.includes(part)).forEach(k => mem.delete(k));
-	store.keys().filter(k => k.startsWith('gx:') && k.includes(part)).forEach(k => store.remove(k));
-}
 function gh(path, { accept = JSON_T, text = false, ttl = HOUR, refresh = false, map = d => d } = {}) {
 	const key = accept + ' ' + path;
 	if (!refresh && mem.has(key)) return mem.get(key);
@@ -290,23 +285,24 @@ async function request(path, { accept = JSON_T, text = false, method = 'GET', et
 	return { d: text ? await r.text() : await r.json(), etag: r.headers.get('etag') };
 }
 
-function bar(id, rem, lim, text) {
-	$(id + ' > span').textContent = text;
-	$(id + ' .track > span').style.width = (lim ? 100 * rem / lim : 0) + '%';
-	$(id).className = 'meter' + (rem === 0 ? ' out' : rem < lim * 0.2 ? ' low' : '');
+// The hourly API allowance is shown in the toolbar. The search allowance refills every minute, so it isn't shown,
+// but Discover tracks it to stop before running out.
+function setMeter(rem, lim, reset) {
+	const m = $('#meter');
+	m.firstChild.textContent = `${num(rem)} / ${num(lim)} API calls · resets ${clock(reset)}`;
+	m.querySelector('.track > span').style.width = (lim ? 100 * rem / lim : 0) + '%';
+	m.className = 'meter' + (rem === 0 ? ' out' : rem < lim * 0.2 ? ' low' : '');
 }
-const setMeter = (rem, lim, reset) => bar('#m-api', rem, lim, `${num(rem)} / ${num(lim)} API calls · resets ${clock(reset)}`);
-// The search allowance refills every minute; it isn't shown, but Discover stops before using it up.
-const setSearchMeter = (rem, lim, reset) => Object.assign(search, { left: rem, reset: reset * 1000 });
+const setSearch = (rem, reset) => Object.assign(search, { left: rem, reset: reset * 1000 });
 function meter(h) {
-	const rem = h.get('x-ratelimit-remaining'), kind = h.get('x-ratelimit-resource');
+	const rem = h.get('x-ratelimit-remaining'), kind = h.get('x-ratelimit-resource'), reset = +h.get('x-ratelimit-reset');
 	if (rem == null) return;
-	if (kind === 'search') setSearchMeter(+rem, +h.get('x-ratelimit-limit'), +h.get('x-ratelimit-reset'));
-	else if (!kind || kind === 'core') setMeter(+rem, +h.get('x-ratelimit-limit'), +h.get('x-ratelimit-reset'));
+	if (kind === 'search') setSearch(+rem, reset);
+	else if (!kind || kind === 'core') setMeter(+rem, +h.get('x-ratelimit-limit'), reset);
 }
 const rate = () => request('rate_limit').then(({ d: { resources: r } }) => {
 	setMeter(r.core.remaining, r.core.limit, r.core.reset);
-	setSearchMeter(r.search.remaining, r.search.limit, r.search.reset);
+	setSearch(r.search.remaining, r.search.reset);
 }).catch(() => {});
 function failure(e) {
 	if (e instanceof Response) {
@@ -378,10 +374,10 @@ function addRecent(r) {
 }
 // Your stars are fetched at most every 6 hours and kept in browser storage; starring updates the saved list directly.
 const showStars = list => fill('stars', list, { full: true, empty: 'Star repositories to bookmark them here.' });
-async function loadStars(force) {
+async function loadStars() {
 	if (!token) return $('[data-sec="stars"]').hidden = true;
 	showStars(starred && starred.list);
-	if (starred && !force && Date.now() - starred.t < 6 * HOUR) return;
+	if (starred && Date.now() - starred.t < 6 * HOUR) return;
 	try {
 		const list = [];
 		for (let page = 1; page <= 10; page++) {
@@ -394,7 +390,7 @@ async function loadStars(force) {
 		if (state.repo) setStar(isStarred(state.repo));
 	} catch (e) { if (!starred) $('[data-sec="stars"] > div').innerHTML = `<p class="note">${esc(failure(e))}</p>`; }
 }
-const isStarred = r => !!starred && starred.list.some(x => x.full_name.toLowerCase() === r.full_name.toLowerCase());
+const isStarred = r => !!starred && starred.list.some(x => same(x.full_name, r.full_name));
 
 // ---- Routing ----
 async function route() {
@@ -420,8 +416,8 @@ function view(o) { Object.assign(state, { repo: null, gist: null, files: null },
 
 // Your own repos are built into the page; any other owner costs one call (cached for an hour).
 async function loadOwner(owner, refresh) {
-	if (!refresh && state.owner && state.owner.toLowerCase() === owner.toLowerCase()) return;
-	const mine = owner.toLowerCase() === OWNER.toLowerCase();
+	if (!refresh && state.owner && same(state.owner, owner)) return;
+	const mine = isOwner(owner);
 	Object.assign(state, { owner, repos: mine ? MINE : [] });
 	$('[data-sec="owner"]').hidden = mine;
 	if (mine) return;
@@ -437,7 +433,7 @@ async function showOwner(owner, n, refresh) {
 	view();
 	$('#q').value = owner;
 	main.innerHTML = '<p class="muted">Loading…</p>';
-	const mine = state.repos === MINE;
+	const mine = isOwner(owner);
 	const u = mine ? SITE.user : await gh(`users/${encodeURIComponent(owner)}`, { ttl: DAY, refresh });
 	if (n !== seq) return;
 	if (!u) throw new Error(`There is no GitHub user or organization called “${owner}”.`);
@@ -475,12 +471,12 @@ async function showSearch(q, topic, n) {
 // ---- Repo view: built data for your repos, live data (cached) for everyone else's ----
 async function showRepo(owner, name, at, n, refresh) {
 	const full = `${owner}/${name}`;
-	if (!refresh && state.repo && state.repo.full_name.toLowerCase() === full.toLowerCase() && $('#files')) return at && openFiles(at, true);
+	if (!refresh && state.repo && same(state.repo.full_name, full) && $('#files')) return at && openFiles(at, true);
 	main.innerHTML = '<p class="muted">Loading…</p>';
-	const r = state.repos.find(x => x.name.toLowerCase() === name.toLowerCase()) || await gh(`repos/${full}`, { refresh, map: d => d && slimRepo(d) });
+	const r = state.repos.find(x => same(x.name, name)) || await gh(`repos/${full}`, { refresh, map: d => d && slimRepo(d) });
 	if (n !== seq) return;
 	if (!r) throw new Error(`There is no public repository called “${full}”.`);
-	const mine = !!isMine(r.full_name);
+	const mine = isMine(r.full_name);
 	view({ repo: r });
 	$('#q').value = r.full_name;
 	addRecent(r);
@@ -686,7 +682,7 @@ main.addEventListener('click', async e => {
 		b.disabled = true;
 		try {
 			await request(`user/starred/${r.full_name}`, { method: on ? 'DELETE' : 'PUT' });
-			starred = { t: starred ? starred.t : 0, list: [...(on ? [] : [r]), ...(starred ? starred.list : []).filter(x => x.full_name.toLowerCase() !== r.full_name.toLowerCase())] };
+			starred = { t: starred ? starred.t : 0, list: [...(on ? [] : [r]), ...(starred ? starred.list : []).filter(x => !same(x.full_name, r.full_name))] };
 			ls.set('explore-starred', starred);
 			setStar(!on);
 			learn(r, on ? -2 : 4);
@@ -769,6 +765,7 @@ function plan() {
 	disc.I = I;
 }
 const discStatus = t => $('#disc-status').textContent = t;
+const discCount = () => $('[data-sec="discover"] summary span:last-child').textContent = $('#disc-list').children.length || '';
 // Stop before the search allowance runs out, keeping a couple of searches for the search box and Similar.
 const caughtUp = () => $('#disc-status').innerHTML = `<b>✓ You're all caught up.</b><br>More suggestions after ${clock(Math.max(search.reset, Date.now() + 1000) / 1000, true)}.`;
 async function discover(reset) {
@@ -836,7 +833,7 @@ async function more(n) {
 	const isNew = r => r.created_at && Date.now() - Date.parse(r.created_at) < 120 * DAY;
 	$('#disc-list').insertAdjacentHTML('beforeend', picked.map(({ c: { r, why } }) =>
 		`<div class="sug">${repoLink(r, true, `${r.stargazers_count >= 10000 ? ' <span class="tag star">famous</span>' : r.stargazers_count < 50 ? ' <span class="tag blue">gem</span>' : ''}${isNew(r) ? ' <span class="tag ok">new</span>' : ''} · ${esc(why.join(', '))}`)}<button class="x" data-hide="${esc(r.full_name)}" title="Not interested">✕</button></div>`).join(''));
-	$('[data-sec="discover"] summary span:last-child').textContent = disc.shown.size || '';
+	discCount();
 	applyFilter(); highlight();
 	disc.busy = false;
 	if ((wait || (search.left != null && search.left <= SEARCH_RESERVE && Date.now() < search.reset)) && !disc.buffer.size) return caughtUp();
@@ -851,7 +848,7 @@ nav.addEventListener('click', e => {
 	ls.set('explore-hidden', [...ls.get('explore-hidden', []), k].slice(-500));
 	learn(disc.items.get(k), -1);
 	x.closest('.sug').remove();
-	$('[data-sec="discover"] summary span:last-child').textContent = $('#disc-list').children.length || '';
+	discCount();
 });
 nav.addEventListener('scroll', () => { if (nav.scrollTop + nav.clientHeight > nav.scrollHeight - 300 && $('[data-sec="discover"]').open && disc.I) more(2); }, { passive: true });
 $('#disc-more').addEventListener('click', () => more(2));
@@ -886,7 +883,6 @@ const tokenLabel = () => $('#token-btn').textContent = token ? `Token: ${me || '
 async function useToken(t) {
 	token = t; me = null; starred = null;
 	ls.set('explore-starred', null);
-	forget('user/starred');
 	$('#token-status').textContent = '';
 	if (t) {
 		try { me = (await request('user')).d.login; $('#token-status').textContent = `Saved. Signed in to the API as ${me}.`; }
