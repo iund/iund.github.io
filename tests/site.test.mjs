@@ -12,11 +12,13 @@ const repo = (full, extra = {}) => ({
 	name: full.split('/')[1], full_name: full, owner: { login: full.split('/')[0] }, description: `${full} description`, language: 'Go',
 	stargazers_count: 42, fork: false, archived: false, topics: ['cli'], license: { spdx_id: 'MIT' }, default_branch: 'main',
 	html_url: `https://github.com/${full}`, ssh_url: `git@github.com:${full}.git`, clone_url: `https://github.com/${full}.git`,
+	forks_count: 3, size: 2048, has_pages: true, is_template: false,
 	pushed_at: '2026-01-01T00:00:00Z', created_at: '2025-01-01T00:00:00Z', ...extra,
 });
 const API = {
-	[`users/${OTHER.split('/')[0]}/repos`]: [repo(OTHER), repo('someone/plain', { topics: [], description: null })],
-	[`repos/${OTHER}/releases`]: [{ name: 'v1.0', tag_name: 'v1.0', draft: false, prerelease: false, published_at: '2026-01-02T00:00:00Z', body_html: '<p>notes</p>',
+	[`users/${OTHER.split('/')[0]}/repos`]: [repo(OTHER), repo('someone/plain', { topics: [], description: null }), repo('someone/forked', { fork: true })],
+	'repos/someone/forked': { ...repo('someone/forked', { fork: true }), parent: { full_name: OTHER } },
+	[`repos/${OTHER}/releases`]: [{ name: 'v1.1', tag_name: 'v1.1', draft: false, prerelease: false, published_at: '2026-02-02T00:00:00Z', body_html: '', assets: [] }, { name: 'v1.0', tag_name: 'v1.0', draft: false, prerelease: false, published_at: '2026-01-02T00:00:00Z', body_html: '<p>notes</p>',
 		assets: [{ name: 'tool.tar.gz', size: 2048, download_count: 5, browser_download_url: `https://github.com/${OTHER}/releases/download/v1.0/tool.tar.gz` }] }],
 	'search/repositories': { total_count: 2, items: [repo('big/famous', { stargazers_count: 50000 }), repo('tiny/gem', { stargazers_count: 5 })] },
 	rate_limit: { resources: { core: { remaining: 60, limit: 60, reset: 2e9 }, search: { remaining: 10, limit: 10, reset: 2e9 } } },
@@ -108,7 +110,12 @@ test('gists open from the build', async t => {
 test("another user's repo loads live, with Similar only once scrolled into view", async () => {
 	await page.setViewportSize({ width: 1280, height: 400 });
 	await open(OTHER);
-	assert.match(await page.textContent('#releases'), /v1\.0.*tool\.tar\.gz/s);
+	assert.equal(await page.textContent('#releases .release h3 >> nth=0'), 'v1.1', 'latest release first');
+	assert.equal(await page.isVisible('#releases .older .release'), false, 'older releases start folded');
+	await page.click('#releases .older > summary');
+	assert.match(await page.textContent('#releases .older'), /Older releases \(1\).*v1\.0.*tool\.tar\.gz/s);
+	assert.equal(await page.title(), `${OTHER} · ${data.user.login}`);
+	assert.match(await page.textContent('main .head p.muted'), /3 forks.*MIT.*2\.0 MB.*updated .*site/s);
 	assert.match(await page.textContent('#readme'), /Hello from the README/);
 	assert.ok(await page.isVisible('[data-sec="owner"]'));
 	assert.deepEqual(apiCalls(), [`users/someone/repos`, `repos/${OTHER}/releases`]);
@@ -121,7 +128,24 @@ test("another user's repo loads live, with Similar only once scrolled into view"
 test('repos without topics or descriptions open and feed Discover', async () => {
 	await open('someone/plain');
 	await open(OTHER);
-	assert.match(await page.textContent('#releases'), /v1\.0/);
+	assert.match(await page.textContent('#releases'), /v1\.1/);
+});
+
+test("a fork's tag opens the repo it was forked from", async () => {
+	await open('someone/forked');
+	const before = calls.length;
+	await page.click('main h1 a.tag');
+	await page.waitForURL(u => u.hash === '#' + OTHER);
+	await page.waitForSelector('#releases .release');
+	assert.deepEqual(calls.slice(before).filter(c => !c.startsWith('search/')), ['repos/someone/forked', `repos/${OTHER}/releases`]);
+});
+
+test('your forks link straight to their upstream from the build', async t => {
+	const fork = data.repos.find(r => r.fork && r.parent);
+	if (!fork) return t.skip('no forks');
+	await open(fork.full_name);
+	assert.equal(await page.getAttribute('main h1 a.tag', 'href'), '#' + fork.parent);
+	assert.deepEqual(apiCalls(), []);
 });
 
 test('pasted GitHub URLs route to the right view', async () => {

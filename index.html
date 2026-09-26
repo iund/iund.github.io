@@ -98,7 +98,12 @@ layout: null
 		.card .d { color: var(--dim); font-size: 0.9em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 		.card small { color: var(--dim); margin-top: auto; }
 		.release { border: 1px solid var(--line); border-radius: 6px; padding: 0.7em 1em; }
-		.release + .release { margin-top: 0.5em; }
+		.release + .release, .older .release { margin-top: 0.5em; }
+		.older { margin-top: 0.6em; }
+		.older > summary { cursor: pointer; color: var(--dim); }
+		.av { width: 1.2em; height: 1.2em; border-radius: 50%; vertical-align: -0.25em; margin-right: 0.3em; }
+		a.tag { text-decoration: none; }
+		a.tag:hover { color: var(--link); }
 		.release > summary, .notes > summary { cursor: pointer; }
 		.release h3 { display: inline; font-size: 1.1em; margin: 0; }
 		.assets { list-style: none; padding: 0; margin: 0.6em 0 0; display: grid; gap: 0.3em; }
@@ -200,11 +205,19 @@ const MIN = 60000, HOUR = 60 * MIN, DAY = 24 * HOUR;
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const main = $('#main'), nav = $('nav');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const day = s => (s || '').slice(0, 10);
 const num = n => (n ?? 0).toLocaleString();
 const size = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
 const clock = (s, sec) => new Date(s * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', ...(sec && { second: '2-digit' }) });
-const ago = t => { const m = Math.round((Date.now() - t) / MIN); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+const RTF = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const UNITS = [['year', 365 * DAY], ['month', 30 * DAY], ['week', 7 * DAY], ['day', DAY], ['hour', HOUR], ['minute', MIN]];
+// "3 days ago", with the exact date on hover. Accepts an ISO date or a timestamp.
+function when(t) {
+	if (!t) return '';
+	const ms = new Date(t).getTime() - Date.now(), [unit, size] = UNITS.find(([, n]) => Math.abs(ms) >= n) || ['minute', MIN];
+	return `<time datetime="${new Date(t).toISOString()}" title="${new Date(t).toLocaleString()}">${RTF.format(Math.round(ms / size), unit)}</time>`;
+}
+const avatar = (url, px) => url ? `${esc(url)}${url.includes('?') ? '&' : '?'}s=${px}` : '';
+const pagesUrl = r => same(r.name, `${r.owner.login}.github.io`) ? `https://${r.name.toLowerCase()}/` : `https://${r.owner.login.toLowerCase()}.github.io/${r.name}/`;
 const ext = (href, html, title = '') => `<a href="${esc(href)}" target="_blank" rel="noopener" title="${esc(title)}">${html}</a>`;
 const btn = (icon, label, attrs = '') => `<button ${attrs}>${ICON[icon] || ''}<span>${label}</span></button>`;
 const same = (a, b) => a.toLowerCase() === b.toLowerCase();
@@ -236,8 +249,8 @@ const ls = {
 };
 
 // Trim API objects before caching so storage holds many more of them.
-const slimRepo = r => ({ name: r.name, full_name: r.full_name, owner: { login: r.owner.login }, description: r.description, language: r.language,
-	stargazers_count: r.stargazers_count, fork: r.fork, archived: r.archived, topics: r.topics, license: r.license && { spdx_id: r.license.spdx_id },
+const slimRepo = r => ({ name: r.name, full_name: r.full_name, owner: { login: r.owner.login, avatar_url: r.owner.avatar_url }, description: r.description, language: r.language,
+	stargazers_count: r.stargazers_count, forks_count: r.forks_count, size: r.size, has_pages: r.has_pages, is_template: r.is_template, parent: r.parent && r.parent.full_name, fork: r.fork, archived: r.archived, topics: r.topics, license: r.license && { spdx_id: r.license.spdx_id },
 	default_branch: r.default_branch, html_url: r.html_url, ssh_url: r.ssh_url, clone_url: r.clone_url, homepage: r.homepage, pushed_at: r.pushed_at, created_at: r.created_at });
 const slimRelease = x => ({ name: x.name, tag_name: x.tag_name, draft: x.draft, prerelease: x.prerelease, published_at: x.published_at, body_html: x.body_html,
 	assets: x.assets.map(a => ({ name: a.name, size: a.size, download_count: a.download_count, browser_download_url: a.browser_download_url })) });
@@ -335,9 +348,9 @@ function parse(input) {
 // ---- Left pane ----
 const lic = r => r.license && r.license.spdx_id && r.license.spdx_id !== 'NOASSERTION' ? esc(r.license.spdx_id) : '';
 const repoLink = (r, full, extra = '') => `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${lic(r) ? `<span class="tag">${lic(r)}</span> ` : ''}${esc(r.language || '')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}${extra}</small></a>`;
-const card = r => `<a class="card" href="#${esc(r.full_name)}"><b>${esc(r.full_name)}</b><span class="d">${esc(r.description || '')}</span><small>${esc(r.language || '')}${r.language ? ' · ' : ''}★ ${num(r.stargazers_count)} · updated ${day(r.pushed_at)}</small></a>`;
+const card = r => `<a class="card" href="#${esc(r.full_name)}"><b>${esc(r.full_name)}</b><span class="d">${esc(r.description || '')}</span><small>${esc(r.language || '')}${r.language ? ' · ' : ''}★ ${num(r.stargazers_count)} · updated ${when(r.pushed_at)}</small></a>`;
 const gistTitle = g => g.description || (g.files[0] || {}).filename || g.id;
-const gistCard = g => `<a class="card" href="#gist/${esc(g.id)}"><b>${esc(gistTitle(g))}</b><span class="d">${esc(g.files.map(f => f.filename).join(', '))}</span><small>${[...new Set(g.files.map(f => f.language).filter(Boolean))].map(esc).join(', ')}${g.files.some(f => f.language) ? ' · ' : ''}${g.files.length} file${g.files.length === 1 ? '' : 's'} · updated ${day(g.updated_at)}</small></a>`;
+const gistCard = g => `<a class="card" href="#gist/${esc(g.id)}"><b>${esc(gistTitle(g))}</b><span class="d">${esc(g.files.map(f => f.filename).join(', '))}</span><small>${[...new Set(g.files.map(f => f.language).filter(Boolean))].map(esc).join(', ')}${g.files.some(f => f.language) ? ' · ' : ''}${g.files.length} file${g.files.length === 1 ? '' : 's'} · updated ${when(g.updated_at)}</small></a>`;
 function fill(sec, items, { title, full, empty, html } = {}) {
 	const el = $(`[data-sec="${sec}"]`);
 	el.hidden = false;
@@ -362,8 +375,8 @@ nav.addEventListener('click', e => {
 }, true);
 function settle() {
 	if (!anchor) return;
-	const same = $$('nav a').filter(x => x.dataset.full === anchor.k);
-	const el = same.find(x => x.closest('[data-sec]').dataset.sec === anchor.sec) || same[0];
+	const copies = $$('nav a').filter(x => x.dataset.full === anchor.k);
+	const el = copies.find(x => x.closest('[data-sec]').dataset.sec === anchor.sec) || copies[0];
 	if (el) nav.scrollTop += el.getBoundingClientRect().top - anchor.top;
 }
 function addRecent(r) {
@@ -397,6 +410,10 @@ async function route() {
 	const n = ++seq, refresh = n === refreshSeq, raw = location.hash.slice(1);
 	try {
 		if (raw.startsWith('~search/')) return await showSearch(decodeURIComponent(raw.slice(8)), null, n);
+		if (raw.startsWith('~parent/')) {
+			const full = decodeURIComponent(raw.slice(8)), r = await gh(`repos/${full}`, { map: d => d && slimRepo(d) });
+			return n === seq && location.replace('#' + ((r && r.parent) || full));
+		}
 		if (raw.startsWith('~topic/')) return await showSearch('topic:' + decodeURIComponent(raw.slice(7)), decodeURIComponent(raw.slice(7)), n);
 		const p = decodeURIComponent(raw).split('/');
 		if (p[0] === 'gist' && GISTS.some(g => g.id === p[1])) return showGist(p[1]);
@@ -412,7 +429,12 @@ async function route() {
 		if (n === seq) setTimeout(() => anchor = null);
 	}
 }
-function view(o) { Object.assign(state, { repo: null, gist: null, files: null }, o); highlight(); }
+function view(title, o) {
+	Object.assign(state, { repo: null, gist: null, files: null }, o);
+	document.title = title ? `${title} · ${OWNER}` : OWNER;
+	main.scrollTop = 0;
+	highlight();
+}
 
 // Your own repos are built into the page; any other owner costs one call (cached for an hour).
 async function loadOwner(owner, refresh) {
@@ -430,7 +452,7 @@ async function loadOwner(owner, refresh) {
 }
 
 async function showOwner(owner, n, refresh) {
-	view();
+	view(isOwner(owner) ? '' : owner);
 	$('#q').value = owner;
 	main.innerHTML = '<p class="muted">Loading…</p>';
 	const mine = isOwner(owner);
@@ -439,7 +461,7 @@ async function showOwner(owner, n, refresh) {
 	if (!u) throw new Error(`There is no GitHub user or organization called “${owner}”.`);
 	const top = state.repos.filter(r => !r.fork).sort((a, b) => b.stargazers_count - a.stargazers_count).slice(0, 6);
 	const fresh = [...state.repos].sort((a, b) => (b.pushed_at || '').localeCompare(a.pushed_at || '')).slice(0, 6);
-	main.innerHTML = `<div class="head"><div class="profile"><img src="${esc(u.avatar_url)}&s=144" alt=""><div>
+	main.innerHTML = `<div class="head"><div class="profile"><img src="${avatar(u.avatar_url, 144)}" alt=""><div>
 			<h1>${esc(u.name || u.login)}</h1>
 			<p class="muted">${esc(u.login)} · ${u.type === 'Organization' ? 'organization' : 'user'} · ${num(u.public_repos)} public repositories${u.followers ? ' · ' + num(u.followers) + ' followers' : ''}</p>
 			${u.bio ? `<p>${esc(u.bio)}</p>` : ''}
@@ -451,14 +473,14 @@ async function showOwner(owner, n, refresh) {
 		${mine && GISTS.length ? `<section><h2>Gists</h2><div class="cards">${[...GISTS].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).map(gistCard).join('')}</div></section>` : ''}
 		${mine ? built() : freshness(`users/${encodeURIComponent(owner)}/repos?per_page=100&sort=pushed`)}`;
 }
-const built = () => `<p class="muted age">Built into this page ${day(SITE.built)} · rebuilt every 12 hours</p>`;
+const built = () => `<p class="muted age">Built into this page ${when(SITE.built)} · rebuilt every 12 hours</p>`;
 function freshness(path) {
 	const t = (cacheGet(JSON_T + ' ' + path) || {}).t;
-	return t ? `<p class="muted age">Saved in this browser ${ago(t)} · <button class="linkish" id="refresh">refresh</button></p>` : '';
+	return t ? `<p class="muted age">Saved in this browser ${when(t)} · <button class="linkish" id="refresh">refresh</button></p>` : '';
 }
 
 async function showSearch(q, topic, n) {
-	view();
+	view(topic ? 'Topic: ' + topic : 'Search: ' + q);
 	$('#q').value = topic ? '' : q;
 	main.innerHTML = '<p class="muted">Searching…</p>';
 	const res = await gh(`search/repositories?per_page=30&sort=stars&q=${encodeURIComponent(q)}`, { ttl: DAY, map: d => ({ total_count: d.total_count, items: d.items.map(slimRepo) }) });
@@ -477,7 +499,7 @@ async function showRepo(owner, name, at, n, refresh) {
 	if (n !== seq) return;
 	if (!r) throw new Error(`There is no public repository called “${full}”.`);
 	const mine = isMine(r.full_name);
-	view({ repo: r });
+	view(r.full_name, { repo: r });
 	$('#q').value = r.full_name;
 	addRecent(r);
 	learn(r, disc.shown.has(r.full_name.toLowerCase()) ? 2 : 1);
@@ -485,9 +507,19 @@ async function showRepo(owner, name, at, n, refresh) {
 	dwell = [20000, 60000].map(ms => setTimeout(() => state.repo === r && learn(r, 1), ms));
 	const sections = ['releases', ...(mine ? ['actions'] : []), 'readme', 'files', ...(mine ? [] : ['similar'])];
 	main.innerHTML = `<div class="head"><div>
-			<h1>${esc(r.name)}${r.fork ? ' <span class="tag">fork</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}</h1>
+			<h1>${esc(r.name)}${r.fork ? ` <a class="tag" href="#${r.parent ? esc(r.parent) : '~parent/' + esc(r.full_name)}" title="${r.parent ? 'Fork of ' + esc(r.parent) : 'Open the repository this is a fork of'}">fork</a>` : ''}${r.is_template ? ' <span class="tag">template</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}</h1>
 			${r.description ? `<p>${esc(r.description)}</p>` : ''}
-			<p class="muted"><a href="#${esc(r.owner.login)}">${esc(r.owner.login)}</a>${[esc(r.language), '★ ' + num(r.stargazers_count), lic(r), 'updated ' + day(r.pushed_at)].filter(Boolean).map(x => ' · ' + x).join('')}${r.homepage ? ' · ' + ext(r.homepage, esc(r.homepage.replace(/^https?:\/\//, ''))) : ''}</p>
+			<p class="muted">${[
+				`<a href="#${esc(r.owner.login)}">${r.owner.avatar_url ? `<img class="av" src="${avatar(r.owner.avatar_url, 40)}" alt="">` : ''}${esc(r.owner.login)}</a>`,
+				esc(r.language),
+				ext(r.html_url + '/stargazers', '★ ' + num(r.stargazers_count), 'Stargazers'),
+				r.forks_count ? ext(r.html_url + '/forks', `${num(r.forks_count)} fork${r.forks_count === 1 ? '' : 's'}`) : '',
+				lic(r),
+				r.size ? size(r.size * 1024) : '',
+				'updated ' + when(r.pushed_at),
+				r.homepage ? ext(r.homepage, esc(r.homepage.replace(/^https?:\/\//, ''))) : '',
+				r.has_pages && !(r.homepage || '').startsWith(pagesUrl(r).replace(/\/$/, '')) ? ext(pagesUrl(r), 'site', 'GitHub Pages site') : '',
+			].filter(Boolean).join(' · ')}</p>
 			${r.topics && r.topics.length ? `<div class="topics">${r.topics.map(t => `<a href="#~topic/${encodeURIComponent(t)}">${esc(t)}</a>`).join('')}</div>` : ''}
 		</div>
 		<div class="clone">
@@ -535,17 +567,19 @@ function setStar(on) {
 }
 function runsHTML(r) {
 	const cls = s => s === 'success' ? 'ok' : s === 'failure' ? 'bad' : 'run';
-	return `<ul>${(r.runs || []).map(w => { const s = w.conclusion || w.status; return `<li><span class="tag ${cls(s)}">${esc(s)}</span> ${ext(w.html_url, esc(w.name))} <span class="muted">${esc(w.head_branch)} · ${day(w.created_at)}</span></li>`; }).join('') || '<li class="muted">No workflow runs</li>'}</ul>${ext(r.html_url + '/actions', 'All workflow runs')}`;
+	return `<ul>${(r.runs || []).map(w => { const s = w.conclusion || w.status; return `<li><span class="tag ${cls(s)}">${esc(s)}</span> ${ext(w.html_url, esc(w.name))} <span class="muted">${esc(w.head_branch)} · ${when(w.created_at)}</span></li>`; }).join('') || '<li class="muted">No workflow runs</li>'}</ul>${ext(r.html_url + '/actions', 'All workflow runs')}`;
 }
 function releasesHTML(r, list) {
 	const rels = (list || []).filter(x => !x.draft);
 	if (!rels.length) return '<p class="muted">No releases. Use the zip button above to download the source.</p>';
-	return rels.slice(0, 5).map((x, i) => {
+	const html = rels.slice(0, 6).map((x, i) => {
 		const assets = x.assets.map(a => `<li><a href="${esc(a.browser_download_url)}">${ICON.dl} ${esc(a.name)}</a><span>${size(a.size)} · ${num(a.download_count)} downloads</span></li>`).join('');
-		const label = `<h3>${esc(x.name || x.tag_name)}</h3> ${x.prerelease ? '<span class="tag run">pre-release</span>' : i === 0 ? '<span class="tag ok">latest</span>' : ''} <span class="muted">${day(x.published_at)}</span>`;
+		const label = `<h3>${esc(x.name || x.tag_name)}</h3> ${x.prerelease ? '<span class="tag run">pre-release</span>' : i === 0 ? '<span class="tag ok">latest</span>' : ''} <span class="muted">${when(x.published_at)}</span>`;
 		const body = `<ul class="assets">${assets}<li><a href="${esc(r.html_url)}/archive/refs/tags/${encodeURIComponent(x.tag_name)}.zip">${ICON.dl} Source code (zip)</a><span>${esc(x.tag_name)}</span></li></ul>${x.body_html ? `<details class="notes"><summary>Release notes</summary><div class="markdown-body">${DOMPurify.sanitize(x.body_html)}</div></details>` : ''}`;
 		return i === 0 ? `<div class="release">${label}${body}</div>` : `<details class="release"><summary>${label} <span class="muted">· ${x.assets.length} file${x.assets.length === 1 ? '' : 's'}</span></summary>${body}</details>`;
-	}).join('') + `<p>${ext(r.html_url + '/releases', 'All releases on GitHub')}</p>`;
+	});
+	return html[0] + (html.length > 1 ? `<details class="older"><summary>Older releases (${html.length - 1})</summary>${html.slice(1).join('')}</details>` : '') +
+		`<p>${ext(r.html_url + '/releases', 'All releases on GitHub')}</p>`;
 }
 // Your READMEs are built in. Others: README.md from raw.githubusercontent.com (no API call), rendered here; other formats fall back to the API.
 async function readmeHTML(r, refresh) {
@@ -647,9 +681,9 @@ function loadFile(body, url, name, bytes) {
 // ---- Gist view (built list; file contents load from raw URLs) ----
 function showGist(id) {
 	const g = GISTS.find(x => x.id === id);
-	view({ gist: id });
+	view(gistTitle(g), { gist: id });
 	$('#q').value = '';
-	main.innerHTML = `<div class="head"><div><h1>${esc(gistTitle(g))}</h1><p class="muted">updated ${day(g.updated_at)}</p></div>
+	main.innerHTML = `<div class="head"><div><h1>${esc(gistTitle(g))}</h1><p class="muted">updated ${when(g.updated_at)}</p></div>
 		<div class="clone">${ext(g.html_url, ICON.eye + 'github', 'View on GitHub')}<a href="https://gist.github.com/${esc(g.owner)}/${esc(g.id)}/archive/HEAD.zip" title="Download ZIP">${ICON.dl}zip</a></div></div>` +
 		g.files.map(f => `<section><div class="filehead"><h2>${esc(f.filename)} <small class="muted">${esc(f.language || '')}</small></h2><div class="clone">
 			${btn('copy', 'copy', 'data-copy-file title="Copy contents"')}<a href="${esc(f.raw_url)}" download="${esc(f.filename)}" title="Download ${esc(f.filename)}">${ICON.dl}download</a></div></div><div class="file-body"></div></section>`).join('');
