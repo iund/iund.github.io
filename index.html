@@ -145,7 +145,6 @@ layout: null
 		</form>
 		<span id="meters">
 			<span class="meter" id="m-api" title="GitHub API calls left this hour"><span></span><span class="track"><span></span></span></span>
-			<span class="meter" id="m-search" title="GitHub searches left this minute (search box, Similar and Discover)"><span></span><span class="track"><span></span></span></span>
 		</span>
 		<button class="btn" id="token-btn" aria-expanded="false" aria-controls="settings">Token</button>
 	</header>
@@ -297,14 +296,8 @@ function bar(id, rem, lim, text) {
 	$(id).className = 'meter' + (rem === 0 ? ' out' : rem < lim * 0.2 ? ' low' : '');
 }
 const setMeter = (rem, lim, reset) => bar('#m-api', rem, lim, `${num(rem)} / ${num(lim)} API calls · resets ${clock(reset)}`);
-// The search allowance refills every minute; show it full again once the reset time passes.
-let searchTimer;
-function setSearchMeter(rem, lim, reset) {
-	Object.assign(search, { left: rem, reset: reset * 1000 });
-	bar('#m-search', rem, lim, `${rem} / ${lim} searches · resets ${clock(reset, true)}`);
-	clearTimeout(searchTimer);
-	if (rem < lim) searchTimer = setTimeout(() => { search.left = lim; bar('#m-search', lim, lim, `${lim} / ${lim} searches this minute`); }, Math.max(0, search.reset - Date.now()) + 500);
-}
+// The search allowance refills every minute; it isn't shown, but Discover stops before using it up.
+const setSearchMeter = (rem, lim, reset) => Object.assign(search, { left: rem, reset: reset * 1000 });
 function meter(h) {
 	const rem = h.get('x-ratelimit-remaining'), kind = h.get('x-ratelimit-resource');
 	if (rem == null) return;
@@ -494,7 +487,7 @@ async function showRepo(owner, name, at, n, refresh) {
 	learn(r, disc.shown.has(r.full_name.toLowerCase()) ? 2 : 1);
 	dwell.forEach(clearTimeout);
 	dwell = [20000, 60000].map(ms => setTimeout(() => state.repo === r && learn(r, 1), ms));
-	const sections = ['releases', ...(mine ? ['actions'] : []), 'readme', ...(mine ? [] : ['similar']), 'files'];
+	const sections = ['releases', ...(mine ? ['actions'] : []), 'readme', 'files', ...(mine ? [] : ['similar'])];
 	main.innerHTML = `<div class="head"><div>
 			<h1>${esc(r.name)}${r.fork ? ' <span class="tag">fork</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}</h1>
 			${r.description ? `<p>${esc(r.description)}</p>` : ''}
@@ -513,8 +506,8 @@ async function showRepo(owner, name, at, n, refresh) {
 		<section id="releases"><h2>Releases</h2><p class="muted">Loading…</p></section>
 		${mine ? `<section id="actions"><h2>Actions</h2>${runsHTML(r)}</section>` : ''}
 		<section id="readme" class="markdown-body"><h2>README</h2><p class="muted">Loading…</p></section>
-		${mine ? '' : '<section id="similar"><h2>Similar repositories</h2><p class="muted">Loading…</p></section>'}
 		<details id="files"><summary>Files</summary><div></div></details>
+		${mine ? '' : '<section id="similar"><h2>Similar repositories</h2></section>'}
 		<div id="age">${mine ? built() : ''}</div>`;
 	if (token) setStar(isStarred(r));
 	$('#files').addEventListener('toggle', e => e.target.open && !state.files && openFiles({ kind: 'tree', ref: r.default_branch, path: '' }));
@@ -522,8 +515,9 @@ async function showRepo(owner, name, at, n, refresh) {
 	await Promise.all([
 		part('releases', 'Releases', n, async () => releasesHTML(r, r.releases || await gh(`repos/${r.full_name}/releases?per_page=6`, { accept: HTML_T, refresh, map: d => d && d.map(slimRelease) }))),
 		part('readme', 'README', n, () => readmeHTML(r, refresh)),
-		mine ? null : token || cacheGet('similar ' + r.full_name) ? loadSimilar(r, n, refresh) : offerSimilar(),
 	]);
+	// Similar repositories load when scrolled into view (search calls have their own per-minute limit).
+	if (!mine && n === seq) new IntersectionObserver((es, io) => { if (es[0].isIntersecting) { io.disconnect(); loadSimilar(r, n, refresh); } }).observe($('#similar'));
 	if (n === seq && !mine) $('#age').innerHTML = freshness(`repos/${r.full_name}/releases?per_page=6`);
 }
 // Fill a section from an async HTML builder, showing any error in place.
@@ -581,7 +575,6 @@ function fixLinks(el, r) {
 	el.querySelectorAll('img[src]').forEach(i => { const s = i.getAttribute('src'); if (relative(s)) i.src = new URL(s.replace(/^\//, ''), `https://raw.githubusercontent.com/${r.full_name}/${r.default_branch}/`).href; });
 }
 
-const offerSimilar = () => $('#similar').innerHTML = '<h2>Similar repositories</h2><button class="btn" id="find-similar">Find similar repositories</button> <span class="muted">Uses GitHub search, which has its own limit (10 searches a minute without a token).</span>';
 const STOP = new Set('the and for with from that this your into over using based simple small tool tools library written code project app application'.split(' '));
 const keywords = r => (((r.description || '') + ' ' + r.name.replace(/[-_.]/g, ' ')).toLowerCase().match(/[a-z][a-z\d]{3,}/g) || []).filter(w => !STOP.has(w)).slice(0, 4);
 // Search calls have their own limit and don't use the hourly allowance; results are kept for a day.
@@ -592,8 +585,7 @@ async function loadSimilar(r, n, refresh) {
 		if (!saved || Date.now() - saved.t > DAY) {
 			$('#similar').innerHTML = '<h2>Similar repositories</h2><p class="muted">Searching…</p>';
 			const lang = r.language ? ` language:"${r.language}"` : '', topics = r.topics || [], words = keywords(r).slice(0, 3);
-			const basis = topics.length ? 'topics ' + topics.slice(0, 2).join(', ') : words.length ? 'keywords ' + words.join(', ') : '';
-			if (!basis) return '<p class="muted">This repository has no topics or description to match on.</p>';
+			if (!topics.length && !words.length) return '<p class="muted">This repository has no topics or description to match on.</p>';
 			const queries = [...new Set(topics.length
 				? [topics.slice(0, 2).map(t => 'topic:' + t).join(' ') + lang, 'topic:' + topics[0] + lang, 'topic:' + topics[0]]
 				: [words.join(' ') + ' in:name,description,topics' + lang, words.slice(0, 2).join(' ') + ' in:name,description,topics'])];
@@ -603,10 +595,9 @@ async function loadSimilar(r, n, refresh) {
 					if (x.full_name !== r.full_name && !found.some(f => f.full_name === x.full_name)) found.push(slimRepo(x));
 				if (found.length >= 8) break;
 			}
-			cachePut(key, saved = { t: Date.now(), d: { basis, items: found.slice(0, 8) } });
+			cachePut(key, saved = { t: Date.now(), d: { items: found.slice(0, 8) } });
 		}
-		return `<p class="muted">Most-starred repositories matching ${esc(saved.d.basis)}${r.language ? ' (' + esc(r.language) + ' first)' : ''}.</p>` +
-			(saved.d.items.length ? `<div class="cards">${saved.d.items.map(card).join('')}</div>` : '<p class="muted">Nothing similar found.</p>');
+		return (saved.d.items.length ? `<div class="cards">${saved.d.items.map(card).join('')}</div>` : '<p class="muted">Nothing similar found.</p>');
 	});
 }
 
@@ -690,7 +681,6 @@ main.addEventListener('click', async e => {
 		return t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 	}
 	if (b.id === 'refresh') { refreshSeq = seq + 1; state.owner = null; return route(); }
-	if (b.id === 'find-similar') return loadSimilar(state.repo, seq);
 	if (b.id === 'star') {
 		const r = state.repo, on = b.classList.contains('on');
 		b.disabled = true;
