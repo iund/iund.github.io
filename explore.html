@@ -63,6 +63,8 @@
 		@media (hover: none) { .sug .x { visibility: visible; } }
 		.sug .x:hover { color: var(--bad); }
 		#disc-foot { font-size: 0.85em; }
+		#consent { position: fixed; left: 1em; right: 1em; bottom: 1em; max-width: 560px; margin: 0 auto; background: var(--nav); border: 1px solid var(--line); border-radius: 8px; padding: 0.4em 1.2em 1em; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); z-index: 10; }
+		#consent p { margin: 0.6em 0; font-size: 0.95em; }
 		nav .line { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 		nav .note { color: var(--dim); font-size: 0.9em; margin: 0.2em 0.5em; }
 
@@ -146,7 +148,7 @@
 		<button class="btn" type="submit">Save</button>
 		<button class="btn" type="button" id="token-clear">Clear</button>
 		<p id="token-status"></p>
-		<p>Raises the API limit from 60 to 5,000 calls an hour and turns on starring and your Starred list. Use a fine-grained token with <b>Public repositories (read-only)</b> access and the account permission <b>Starring: read and write</b>. It is kept in this browser's local storage and only sent to api.github.com.</p>
+		<p>Raises the API limit from 60 to 5,000 calls an hour and turns on starring and your Starred list. Use a fine-grained token with <b>Public repositories (read-only)</b> access and the account permission <b>Starring: read and write</b>. It is only sent to api.github.com, and kept in this browser only if you accepted storage (otherwise until you leave the page).</p>
 	</form>
 	<nav>
 		<input id="filter" type="search" placeholder="Filter lists" aria-label="Filter lists" autocomplete="off">
@@ -157,10 +159,16 @@
 			<div id="disc-list"></div>
 			<p class="note" id="disc-status"></p>
 			<p class="note"><button class="btn" id="disc-more">More suggestions</button></p>
-			<p class="note" id="disc-foot">Tuned in this browser by what you open, star, copy and download. <button class="linkish" id="disc-mix">New mix</button> · <button class="linkish" id="disc-reset">Reset</button></p>
+			<p class="note" id="disc-foot">Tuned in this browser by what you open, star, copy and download. <button class="linkish" id="disc-mix">New mix</button> · <button class="linkish" id="disc-reset">Reset</button> · <button class="linkish" id="consent-open">Storage</button></p>
 		</details>
 	</nav>
 	<main id="main"></main>
+</div>
+<div id="consent" role="dialog" aria-labelledby="consent-title" hidden>
+	<p><b id="consent-title">Remember your browsing on this device?</b></p>
+	<p>The explorer can keep your recent repositories, hidden suggestions, token, Discover taste profile and a cache of GitHub data in this browser's storage (it works like cookies). That tailors suggestions over time and saves API calls. Nothing is sent anywhere except requests to GitHub.</p>
+	<p>If you decline, everything is kept only until you leave or reload this page, and anything saved earlier is deleted. Only your choice is remembered.</p>
+	<div class="clone"><button id="consent-yes">Accept</button><button id="consent-no">Decline</button></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/marked@18.0.14/lib/marked.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.16/dist/purify.min.js"></script>
@@ -182,12 +190,32 @@ const num = n => (n ?? 0).toLocaleString();
 const size = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
 const clock = s => new Date(s * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const ago = t => { const m = Math.round((Date.now() - t) / MIN); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+// Storage only persists after the visitor accepts; until then (or after declining) it lives in memory for this page visit.
+let consent = null;
+try { consent = localStorage.getItem('explore-consent'); } catch {}
+const memStore = new Map();
+const store = {
+	get: k => { if (consent === 'yes') { try { return localStorage.getItem(k); } catch { return null; } } return memStore.has(k) ? memStore.get(k) : null; },
+	set: (k, v) => { if (consent === 'yes') localStorage.setItem(k, v); else memStore.set(k, v); },
+	remove: k => { if (consent === 'yes') { try { localStorage.removeItem(k); } catch {} } else memStore.delete(k); },
+	keys: () => { if (consent === 'yes') { try { return Object.keys(localStorage); } catch { return []; } } return [...memStore.keys()]; },
+};
+const ours = k => k.startsWith('explore-') || k.startsWith('gx:');
+function setConsent(v) {
+	consent = v;
+	try {
+		localStorage.setItem('explore-consent', v);
+		if (v === 'yes') { memStore.forEach((val, k) => { try { localStorage.setItem(k, val); } catch {} }); memStore.clear(); }
+		else Object.keys(localStorage).filter(k => ours(k) && k !== 'explore-consent').forEach(k => { memStore.set(k, localStorage.getItem(k)); localStorage.removeItem(k); });
+	} catch {}
+	$('#consent').hidden = true;
+}
 const ls = {
-	get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
-	set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+	get: (k, d) => { try { return JSON.parse(store.get(k)) ?? d; } catch { return d; } },
+	set: (k, v) => { try { v == null ? store.remove(k) : store.set(k, JSON.stringify(v)); } catch {} },
 };
 
-// Trim API objects before caching so localStorage holds many more of them.
+// Trim API objects before caching so storage holds many more of them.
 const slimRepo = r => ({ name: r.name, full_name: r.full_name, owner: { login: r.owner.login }, description: r.description, language: r.language,
 	stargazers_count: r.stargazers_count, fork: r.fork, archived: r.archived, topics: r.topics, license: r.license && { spdx_id: r.license.spdx_id },
 	default_branch: r.default_branch, html_url: r.html_url, ssh_url: r.ssh_url, clone_url: r.clone_url, homepage: r.homepage, pushed_at: r.pushed_at, created_at: r.created_at });
@@ -202,25 +230,25 @@ let seq = 0, refreshSeq = -1;
 const search = { left: null, reset: 0 };
 const SEARCH_RESERVE = 2;
 
-// Persistent cache in localStorage ("gx:" keys). Fresh entries are served without a request;
+// Cache in browser storage ("gx:" keys; persistent once storage is accepted). Fresh entries are served without a request;
 // stale ones are revalidated with If-None-Match, and a 304 does not use up the API allowance.
-function cacheGet(key) { try { return JSON.parse(localStorage.getItem('gx:' + key)); } catch { return null; } }
+function cacheGet(key) { try { return JSON.parse(store.get('gx:' + key)); } catch { return null; } }
 function cachePut(key, v) {
 	const s = JSON.stringify(v);
 	for (let i = 0; i < 4; i++) {
-		try { localStorage.setItem('gx:' + key, s); return; } catch { if (!evict()) return; }
+		try { store.set('gx:' + key, s); return; } catch { if (!evict()) return; }
 	}
 }
 function evict() {
-	const keys = Object.keys(localStorage).filter(k => k.startsWith('gx:'));
+	const keys = store.keys().filter(k => k.startsWith('gx:'));
 	if (!keys.length) return false;
-	const aged = keys.map(k => { let t = 0; try { t = JSON.parse(localStorage.getItem(k)).t; } catch {} return [k, t]; }).sort((a, b) => a[1] - b[1]);
-	aged.slice(0, Math.max(1, aged.length >> 2)).forEach(([k]) => localStorage.removeItem(k));
+	const aged = keys.map(k => { let t = 0; try { t = JSON.parse(store.get(k)).t; } catch {} return [k, t]; }).sort((a, b) => a[1] - b[1]);
+	aged.slice(0, Math.max(1, aged.length >> 2)).forEach(([k]) => store.remove(k));
 	return true;
 }
 function forget(prefix) {
 	for (const k of [...mem.keys()]) if (k.includes(prefix)) mem.delete(k);
-	try { Object.keys(localStorage).filter(k => k.startsWith('gx:') && k.includes(prefix)).forEach(k => localStorage.removeItem(k)); } catch {}
+	store.keys().filter(k => k.startsWith('gx:') && k.includes(prefix)).forEach(k => store.remove(k));
 }
 const mem = new Map();
 function gh(path, { accept = JSON_T, text = false, ttl = HOUR, refresh = false, map = d => d } = {}) {
@@ -317,7 +345,7 @@ function addRecent(r) {
 	fillSection('#sec-recent', null, ls.get('explore-recent', []), true, 'Repositories you open appear here.');
 }
 
-// Your stars are fetched at most every 6 hours and kept in localStorage; starring updates the saved list directly.
+// Your stars are fetched at most every 6 hours and kept in browser storage; starring updates the saved list directly.
 async function loadStars(force) {
 	if (!token) { $('#sec-stars').hidden = true; return; }
 	if (starred && !force && Date.now() - starred.t < 6 * HOUR) return fillSection('#sec-stars', null, starred.list, true, 'Star repositories to bookmark them here.');
@@ -624,7 +652,7 @@ main.addEventListener('click', async e => {
 	try { await navigator.clipboard.writeText(text); flash(b, 'copied'); if (b.dataset.copy && state.repo) learn(state.repo, 3); } catch { flash(b, 'copy failed'); }
 });
 
-// Discover: a taste profile kept in localStorage, fed by what you open, star, copy and download,
+// Discover: a taste profile kept in browser storage, fed by what you open, star, copy and download,
 // plus the topics of your Starred, Recent and current owner's repos. It drives search queries whose
 // results continue the left pane. Search calls have their own limit and don't use the hourly allowance.
 const HALF_LIFE = 7 * DAY;
@@ -834,6 +862,10 @@ function rate() {
 	request('rate_limit').then(({ d }) => setMeter(d.resources.core.remaining, d.resources.core.limit, d.resources.core.reset)).catch(() => {});
 }
 
+$('#consent-yes').addEventListener('click', () => setConsent('yes'));
+$('#consent-no').addEventListener('click', () => setConsent('no'));
+$('#consent-open').addEventListener('click', () => $('#consent').hidden = false);
+if (!consent) $('#consent').hidden = false;
 addEventListener('hashchange', route);
 tokenLabel();
 fillSection('#sec-recent', null, ls.get('explore-recent', []), true, 'Repositories you open appear here.');
