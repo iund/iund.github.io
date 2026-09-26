@@ -875,7 +875,7 @@ function showGist(id) {
 	view(gistTitle(g), { gist: id }, true);
 	setQ('');
 	main.innerHTML = `<div class="head"><div>${can ? `<input class="title" id="gdesc" value="${esc(g.description || '')}" placeholder="Add a description" aria-label="Description" spellcheck="false">` : `<h1>${esc(gistTitle(g))}</h1>`}<p class="muted" id="gist-status">${g.public === false ? 'secret · ' : ''}updated ${when(g.updated_at)}</p></div>
-		<div class="clone">${can ? btn('plus', 'add file', 'id="gist-add" title="Add another file to this gist"') : ''}${ext(g.html_url, ICON.eye + 'github', 'View on GitHub')}${[['ssh', `git@gist.github.com:${g.id}.git`], ['https', `https://gist.github.com/${g.id}.git`]].map(([k, u]) => btn('copy', k, `data-copy="${esc(u)}" title="Copy ${esc(u)}"`)).join('')}<a href="https://gist.github.com/${esc(g.owner)}/${esc(g.id)}/archive/HEAD.zip" title="Download ZIP">${ICON.dl}zip</a></div></div>` +
+		<div class="clone">${can ? btn('plus', 'add file', 'id="gist-add" title="Add another file to this gist"') : ''}${me && same(g.owner, me) ? '' : btn('fork', 'fork', token ? `id="gist-fork" title="Fork into ${esc(me || 'your account')}"` : 'id="gist-fork" disabled title="Save a token under Token to fork gists"')}${ext(g.html_url, ICON.eye + 'github', 'View on GitHub')}${[['ssh', `git@gist.github.com:${g.id}.git`], ['https', `https://gist.github.com/${g.id}.git`]].map(([k, u]) => btn('copy', k, `data-copy="${esc(u)}" title="Copy ${esc(u)}"`)).join('')}<a href="https://gist.github.com/${esc(g.owner)}/${esc(g.id)}/archive/HEAD.zip" title="Download ZIP">${ICON.dl}zip</a></div></div>` +
 		g.files.map(f => fileSec(f, can)).join('');
 	main.querySelectorAll('.file-body').forEach((b, i) => loadFile(b, g.files[i].raw_url, g.files[i].filename));
 }
@@ -990,6 +990,16 @@ main.addEventListener('click', async e => {
 			state.owner = null;
 			location.hash = f.full_name;
 		} catch (err) { flash(b, err instanceof Response && err.status === 403 ? 'token cannot fork' : 'failed'); b.disabled = false; }
+		return;
+	}
+	// Gist forks land in the token's account, outside this page's gist list, so the button becomes a link to the fork.
+	if (b.id === 'gist-fork') {
+		b.disabled = true;
+		try {
+			const { d } = await request(`gists/${state.gist}/forks`, { method: 'POST' });
+			if (!d) throw new Error('token lacks Gists');
+			b.outerHTML = ext(d.html_url, ICON.fork + 'your fork', 'Open your fork on GitHub');
+		} catch (err) { flash(b, gistFail(err)); b.disabled = false; }
 		return;
 	}
 	if (b.id === 'repo-create') {

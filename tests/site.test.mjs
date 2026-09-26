@@ -117,6 +117,7 @@ test('gists open from the build', async t => {
 	assert.equal(await page.locator('main .filehead').count(), g.files.length);
 	assert.equal(await page.locator('[data-sec="gists"] a.active').count(), 1);
 	assert.deepEqual(await page.$$eval('main .head [data-copy]', bs => bs.map(b => b.dataset.copy)), [`git@gist.github.com:${g.id}.git`, `https://gist.github.com/${g.id}.git`]);
+	assert.equal(await page.isDisabled('#gist-fork'), true, 'fork needs a token');
 	assert.equal(await page.evaluate(() => document.fonts.load('16px Iosevka', 'a').then(f => f.length)), 1, 'Iosevka loads from the site');
 	assert.equal(await page.evaluate(() => document.fonts.load('16px Iosevka', 'Ж').then(f => f.length)), 1, 'Cyrillic and other scripts load on demand');
 	assert.deepEqual(apiCalls(), []);
@@ -295,6 +296,7 @@ test('your own token adds, edits and deletes gists, sorted by title', async () =
 	await open('gist/z1');
 	assert.deepEqual(await page.$$eval('[data-sec="gists"] a .line', as => as.map(a => a.textContent)), ['alpha', 'Zed notes']);
 	assert.equal(await page.locator('[data-sec="gists"] summary #gist-new').count(), 1);
+	assert.equal(await page.locator('#gist-fork').count(), 0, 'no fork button on your own gist');
 	assert.equal(await page.locator('nav summary > span:nth-child(2):not(:empty)').count(), 2, 'only the repo and gist + are left in the list headings');
 	assert.equal(await page.inputValue('main section >> nth=0 >> .fname'), 'a.txt');
 	await page.waitForSelector('main section >> nth=0 >> textarea');
