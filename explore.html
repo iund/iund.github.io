@@ -56,6 +56,13 @@
 		nav a.active { background: var(--active); }
 		nav small, nav .desc, .muted { color: var(--dim); }
 		nav small .tag { font-size: 0.9em; }
+		.sug { position: relative; }
+		.sug > a { padding-right: 1.8em; }
+		.sug .x { position: absolute; right: 0.2em; top: 0.3em; background: none; border: 0; color: var(--dim); cursor: pointer; font: inherit; padding: 0.1em 0.3em; visibility: hidden; }
+		.sug:hover .x, .sug .x:focus-visible { visibility: visible; }
+		@media (hover: none) { .sug .x { visibility: visible; } }
+		.sug .x:hover { color: var(--bad); }
+		#disc-foot { font-size: 0.85em; }
 		nav .line { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 		nav .note { color: var(--dim); font-size: 0.9em; margin: 0.2em 0.5em; }
 
@@ -73,7 +80,7 @@
 		.topics a { font-size: 0.8em; border: 1px solid var(--line); border-radius: 999px; padding: 0.1em 0.6em; text-decoration: none; }
 		.topics a:hover { background: var(--raise); }
 		.empty { color: var(--dim); max-width: 50ch; }
-		.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--link); text-decoration: underline; cursor: pointer; }
+		.linkish, nav .linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--link); text-decoration: underline; cursor: pointer; }
 		.age { font-size: 0.85em; margin-top: 2em; }
 		.empty h1 { color: var(--text); }
 
@@ -146,6 +153,12 @@
 		<details id="sec-stars" open hidden><summary><span>Starred</span><span></span></summary><div></div></details>
 		<details id="sec-recent" open><summary><span>Recent</span><span></span></summary><div></div></details>
 		<details id="sec-owner" open hidden><summary><span></span><span></span></summary><div></div></details>
+		<details id="sec-discover" open><summary><span>Discover</span><span></span></summary>
+			<div id="disc-list"></div>
+			<p class="note" id="disc-status"></p>
+			<p class="note"><button class="btn" id="disc-more">More suggestions</button></p>
+			<p class="note" id="disc-foot">Tuned in this browser by what you open, star, copy and download. <button class="linkish" id="disc-mix">New mix</button> · <button class="linkish" id="disc-reset">Reset</button></p>
+		</details>
 	</nav>
 	<main id="main"></main>
 </div>
@@ -177,7 +190,7 @@ const ls = {
 // Trim API objects before caching so localStorage holds many more of them.
 const slimRepo = r => ({ name: r.name, full_name: r.full_name, owner: { login: r.owner.login }, description: r.description, language: r.language,
 	stargazers_count: r.stargazers_count, fork: r.fork, archived: r.archived, topics: r.topics, license: r.license && { spdx_id: r.license.spdx_id },
-	default_branch: r.default_branch, html_url: r.html_url, ssh_url: r.ssh_url, clone_url: r.clone_url, homepage: r.homepage, pushed_at: r.pushed_at });
+	default_branch: r.default_branch, html_url: r.html_url, ssh_url: r.ssh_url, clone_url: r.clone_url, homepage: r.homepage, pushed_at: r.pushed_at, created_at: r.created_at });
 const slimRelease = x => ({ name: x.name, tag_name: x.tag_name, draft: x.draft, prerelease: x.prerelease, published_at: x.published_at, body_html: x.body_html,
 	assets: x.assets.map(a => ({ name: a.name, size: a.size, download_count: a.download_count, browser_download_url: a.browser_download_url })) });
 
@@ -186,6 +199,8 @@ let me = ls.get('explore-me', null);
 let starred = ls.get('explore-starred', null);
 const state = { owner: null, repos: [], repo: null, files: null };
 let seq = 0, refreshSeq = -1;
+const search = { left: null, reset: 0 };
+const SEARCH_RESERVE = 2;
 
 // Persistent cache in localStorage ("gx:" keys). Fresh entries are served without a request;
 // stale ones are revalidated with If-None-Match, and a 304 does not use up the API allowance.
@@ -235,8 +250,9 @@ async function request(path, { accept = JSON_T, text = false, method = 'GET', et
 	return { d: text ? await r.text() : await r.json(), etag: r.headers.get('etag') };
 }
 function meter(h) {
-	if (h.get('x-ratelimit-resource') && h.get('x-ratelimit-resource') !== 'core') return;
 	const rem = h.get('x-ratelimit-remaining');
+	if (h.get('x-ratelimit-resource') === 'search' && rem != null) { search.left = +rem; search.reset = h.get('x-ratelimit-reset') * 1000; return; }
+	if (h.get('x-ratelimit-resource') && h.get('x-ratelimit-resource') !== 'core') return;
 	if (rem != null) setMeter(+rem, +h.get('x-ratelimit-limit'), +h.get('x-ratelimit-reset'));
 }
 function setMeter(rem, lim, reset) {
@@ -271,8 +287,8 @@ function parse(input) {
 }
 
 const lic = r => r.license && r.license.spdx_id && r.license.spdx_id !== 'NOASSERTION' ? esc(r.license.spdx_id) : '';
-function repoLink(r, full) {
-	return `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${lic(r) ? `<span class="tag">${lic(r)}</span> ` : ''}${esc(r.language || '')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}</small></a>`;
+function repoLink(r, full, extra = '') {
+	return `<a href="#${esc(r.full_name)}" data-full="${esc(r.full_name.toLowerCase())}"><span class="line">${esc(full ? r.full_name : r.name)}${r.description ? `<span class="desc"> ${esc(r.description)}</span>` : ''}</span><small>${lic(r) ? `<span class="tag">${lic(r)}</span> ` : ''}${esc(r.language || '')}${r.stargazers_count ? ' ★ ' + num(r.stargazers_count) : ''}${extra}</small></a>`;
 }
 function card(r) {
 	return `<a class="card" href="#${esc(r.full_name)}"><b>${esc(r.full_name)}</b><span class="d">${esc(r.description || '')}</span><small>${esc(r.language || '')}${r.language ? ' · ' : ''}★ ${num(r.stargazers_count)} · updated ${day(r.pushed_at)}</small></a>`;
@@ -296,7 +312,7 @@ function highlight() {
 
 function addRecent(r) {
 	const list = ls.get('explore-recent', []).filter(x => x.full_name !== r.full_name);
-	list.unshift({ full_name: r.full_name, description: r.description, language: r.language, stargazers_count: r.stargazers_count, license: r.license });
+	list.unshift({ full_name: r.full_name, description: r.description, language: r.language, stargazers_count: r.stargazers_count, license: r.license, topics: r.topics });
 	ls.set('explore-recent', list.slice(0, 20));
 	fillSection('#sec-recent', null, ls.get('explore-recent', []), true, 'Repositories you open appear here.');
 }
@@ -399,6 +415,9 @@ async function showRepo(owner, name, at, n, refresh) {
 	state.repo = r; state.files = null;
 	$('#q').value = r.full_name;
 	highlight(); addRecent(r);
+	learn(r, disc.shown.has(r.full_name.toLowerCase()) ? 2 : 1);
+	dwell.forEach(clearTimeout);
+	dwell = [20000, 60000].map(ms => setTimeout(() => state.repo === r && learn(r, 1), ms));
 	main.innerHTML = `<div class="head"><div>
 			<h1>${esc(r.name)}${r.fork ? ' <span class="tag">fork</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}</h1>
 			${r.description ? `<p>${esc(r.description)}</p>` : ''}
@@ -579,6 +598,7 @@ main.addEventListener('click', async e => {
 		(document.getElementById('user-content-' + id) || document.getElementById(id))?.scrollIntoView();
 		return;
 	}
+	if (state.repo && e.target.closest('.clone a[href*="/archive/"], .assets a')) learn(state.repo, 3);
 	const b = e.target.closest('button');
 	if (!b) return;
 	if (b.id === 'refresh') { refreshSeq = seq + 1; state.owner = null; return route(); }
@@ -593,6 +613,7 @@ main.addEventListener('click', async e => {
 			if (!on) starred.list.unshift(r);
 			ls.set('explore-starred', starred);
 			setStar(!on);
+			learn(r, on ? -2 : 4);
 			fillSection('#sec-stars', null, starred.list, true, 'Star repositories to bookmark them here.');
 		} catch (err) { flash(b, err instanceof Response && err.status === 403 ? 'token lacks Starring' : 'failed'); }
 		b.disabled = false;
@@ -600,7 +621,169 @@ main.addEventListener('click', async e => {
 	}
 	const text = 'copyFile' in b.dataset ? $('#file-body pre')?.textContent : b.dataset.copy;
 	if (text == null) return;
-	try { await navigator.clipboard.writeText(text); flash(b, 'copied'); } catch { flash(b, 'copy failed'); }
+	try { await navigator.clipboard.writeText(text); flash(b, 'copied'); if (b.dataset.copy && state.repo) learn(state.repo, 3); } catch { flash(b, 'copy failed'); }
+});
+
+// Discover: a taste profile kept in localStorage, fed by what you open, star, copy and download,
+// plus the topics of your Starred, Recent and current owner's repos. It drives search queries whose
+// results continue the left pane. Search calls have their own limit and don't use the hourly allowance.
+const HALF_LIFE = 7 * DAY;
+let profile = ls.get('explore-profile', { topics: {}, langs: {}, words: {} });
+const disc = { queries: [], shown: new Set(), items: new Map(), buffer: new Map(), cooc: {}, round: 0, busy: false, I: null };
+let dwell = [];
+const decay = e => e.w * Math.pow(0.5, (Date.now() - e.t) / HALF_LIFE);
+const keywords = r => (((r.description || '') + ' ' + r.name.replace(/[-_.]/g, ' ')).toLowerCase().match(/[a-z][a-z\d]{3,}/g) || []).filter(w => !STOP.has(w)).slice(0, 4);
+function bump(kind, key, w) {
+	const e = profile[kind][key];
+	profile[kind][key] = { w: (e ? decay(e) : 0) + w, t: Date.now() };
+}
+function learn(r, w) {
+	if (!r) return;
+	(r.topics || []).forEach(t => bump('topics', t, w));
+	if (r.language) bump('langs', r.language, w / 2);
+	if (!(r.topics || []).length) keywords(r).forEach(k => bump('words', k, w / 2));
+	for (const kind in profile)
+		profile[kind] = Object.fromEntries(Object.entries(profile[kind]).filter(([, e]) => Math.abs(decay(e)) > 0.05).sort((a, b) => decay(b[1]) - decay(a[1])).slice(0, 150));
+	ls.set('explore-profile', profile);
+}
+function interests() {
+	const score = { topics: {}, langs: {}, words: {} };
+	const add = (kind, k, w) => score[kind][k] = (score[kind][k] || 0) + w;
+	for (const kind in score) for (const [k, e] of Object.entries(profile[kind] || {})) add(kind, k, decay(e));
+	const feed = (list, w) => (list || []).forEach(r => {
+		(r.topics || []).forEach(t => add('topics', t, w));
+		if (r.language) add('langs', r.language, w / 2);
+		if (!(r.topics || []).length) keywords(r).forEach(k => add('words', k, w / 3));
+	});
+	feed(starred && starred.list, 1);
+	feed(ls.get('explore-recent', []), 0.7);
+	feed(state.repos, 0.3);
+	const top = kind => Object.entries(score[kind]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+	return { topics: top('topics'), langs: top('langs'), words: top('words'), score };
+}
+// Queries are re-planned before every batch, so what you just opened or starred shapes the next one.
+// Mix: your top topics (proven, by stars), one lesser topic (by activity), one topic that keeps
+// appearing next to your interests ("new to you"), new repos in your top topic, and now and then
+// a wildcard of what's rising across GitHub.
+function plan() {
+	const I = interests();
+	const ymd = ms => new Date(Date.now() - ms).toISOString().slice(0, 10);
+	const quality = ` stars:>10 pushed:>${ymd(365 * DAY).slice(0, 7)}-01 archived:false`;
+	const lang = I.langs[0] && (!I.langs[1] || I.langs[0][1] > I.langs[1][1] * 1.5) ? I.langs[0][0] : null;
+	const known = new Set(I.topics.map(([t]) => t));
+	const want = [];
+	I.topics.slice(0, 3).forEach(([t], i) => want.push({ q: 'topic:' + t + (i === 0 && lang ? ` language:"${lang}"` : '') + quality, sort: 'stars', why: t }));
+	const pool = I.topics.slice(3, 12);
+	if (pool.length) { const [t] = pool[disc.round % pool.length]; want.push({ q: 'topic:' + t + quality, sort: 'updated', why: t }); }
+	const adj = Object.entries(disc.cooc).filter(([t]) => !known.has(t) && !ls.get('explore-hidden-topics', []).includes(t)).sort((a, b) => b[1] - a[1]);
+	if (adj.length) { const [t] = adj[disc.round % Math.min(3, adj.length)]; want.push({ q: 'topic:' + t + quality, sort: 'stars', why: t + ' (new to you)' }); }
+	if (I.topics.length) want.push({ q: `topic:${I.topics[0][0]} created:>${ymd(120 * DAY)} stars:>5`, sort: 'stars', why: I.topics[0][0], fresh: true });
+	if (want.length < 3 && I.words.length) {
+		const w = I.words.slice(0, 2).map(([x]) => x);
+		want.push({ q: w.join(' ') + ' in:name,description,topics' + (lang ? ` language:"${lang}"` : '') + quality, sort: 'stars', why: w.join(', ') });
+		if (I.words[2]) want.push({ q: I.words[2][0] + ' in:name,description,topics' + quality, sort: 'updated', why: I.words[2][0] });
+	}
+	if (!want.length && lang) want.push({ q: `language:"${lang}"` + quality, sort: 'stars', why: lang });
+	if (!want.length || disc.round % 4 === 3) want.push({ q: `created:>${ymd(30 * DAY)} stars:>50`, sort: 'stars', why: 'rising on GitHub', fresh: true });
+	const old = new Map(disc.queries.map(q => [q.q + q.sort, q]));
+	disc.queries = want.map(w => old.get(w.q + w.sort) || { ...w, page: 1, done: false });
+	disc.I = I;
+}
+function discStatus(t) { $('#disc-status').textContent = t; }
+// Stop before the search allowance runs out, keeping a couple of searches for the search box and Similar section.
+function caughtUp() {
+	const at = new Date(Math.max(search.reset, Date.now() + 1000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+	$('#disc-status').innerHTML = `<b>✓ You're all caught up.</b><br>More suggestions after ${at}.`;
+}
+async function discover(reset) {
+	if (reset) { disc.shown.clear(); disc.buffer.clear(); disc.queries = []; disc.cooc = {}; disc.round = 0; $('#disc-list').innerHTML = ''; }
+	await more(3);
+}
+async function more(n) {
+	if (disc.busy) return;
+	plan();
+	const live = disc.queries.filter(q => !q.done);
+	if (!live.length && !disc.buffer.size) return discStatus(disc.shown.size ? 'That is everything for now. Open or star more repositories to widen the mix.' : 'Open or star a few repositories and suggestions will appear here.');
+	const budget = search.left == null || Date.now() > search.reset ? n : search.left - SEARCH_RESERVE;
+	if (budget <= 0 && !disc.buffer.size) return caughtUp();
+	// Enough carried-over suggestions: show those without searching.
+	n = disc.buffer.size >= 8 ? 0 : Math.max(0, Math.min(n, budget));
+	disc.busy = true;
+	discStatus('Finding more…');
+	const off = live.length ? disc.round % live.length : 0;
+	const batch = live.slice(off).concat(live.slice(0, off)).slice(0, Math.min(n, live.length));
+	disc.round++;
+	const cands = new Map(disc.buffer);
+	let wait = 0, err = null;
+	for (const q of batch) {
+		try {
+			const res = await gh(`search/repositories?per_page=20&page=${q.page}&sort=${q.sort}&q=${encodeURIComponent(q.q)}`, { ttl: DAY, map: d => ({ items: d.items.map(slimRepo) }) });
+			q.page++;
+			if (res.items.length < 20 || q.page > 10) q.done = true;
+			for (const r of res.items) {
+				const k = r.full_name.toLowerCase();
+				const c = cands.get(k) || { r, why: [], hits: 0, fresh: false };
+				if (!c.why.includes(q.why)) c.why.push(q.why);
+				c.hits++; c.fresh = c.fresh || q.fresh;
+				cands.set(k, c);
+				(r.topics || []).forEach(t => disc.cooc[t] = (disc.cooc[t] || 0) + 1);
+			}
+		} catch (e) {
+			if (e instanceof Response && e.headers.get('x-ratelimit-remaining') === '0') wait = Math.max(1000, e.headers.get('x-ratelimit-reset') * 1000 - Date.now() + 1000);
+			else err = e;
+			break;
+		}
+	}
+	const skip = new Set([...(starred ? starred.list : []), ...ls.get('explore-recent', []), ...state.repos].map(r => r.full_name.toLowerCase()).concat(ls.get('explore-hidden', [])));
+	const seen = ls.get('explore-seen', {});
+	const S = disc.I.score;
+	const score = (c, k) => {
+		const topic = (c.r.topics || []).reduce((s, t) => s + Math.max(0, S.topics[t] || 0), 0);
+		const lang = Math.max(0, S.langs[c.r.language] || 0) / 2;
+		return (1 + topic + lang + c.hits) * Math.pow(0.6, seen[k] || 0) + Math.log10(1 + c.r.stargazers_count) * 0.4 + (c.fresh ? 1 : 0) + Math.random();
+	};
+	// Greedy pick with a penalty for repeating the same reason, so one topic can't take over a batch.
+	const pool = [...cands].filter(([k]) => !skip.has(k) && !disc.shown.has(k)).map(([k, c]) => ({ k, c, s: score(c, k) }));
+	const picked = [], used = {};
+	while (picked.length < 10) {
+		pool.forEach(x => x.adj = x.s * Math.pow(0.5, used[x.c.why[0]] || 0));
+		pool.sort((a, b) => b.adj - a.adj);
+		const i = pool.findIndex(x => (used[x.c.why[0]] || 0) < 4);
+		if (i < 0) break;
+		const [x] = pool.splice(i, 1);
+		used[x.c.why[0]] = (used[x.c.why[0]] || 0) + 1;
+		picked.push(x);
+	}
+	disc.buffer = new Map(pool.sort((a, b) => b.s - a.s).slice(0, 60).map(x => [x.k, x.c]));
+	picked.forEach(({ k, c }) => { disc.shown.add(k); disc.items.set(k, c.r); seen[k] = (seen[k] || 0) + 1; });
+	ls.set('explore-seen', Object.fromEntries(Object.entries(seen).slice(-600)));
+	const isNew = r => r.created_at && Date.now() - Date.parse(r.created_at) < 120 * DAY;
+	$('#disc-list').insertAdjacentHTML('beforeend', picked.map(({ c }) =>
+		`<div class="sug">${repoLink(c.r, true, `${isNew(c.r) ? ' <span class="tag" style="color:var(--ok)">new</span>' : ''} · ${esc(c.why.join(', '))}`)}<button class="x" data-hide="${esc(c.r.full_name)}" title="Not interested">✕</button></div>`).join(''));
+	$('#sec-discover summary span:last-child').textContent = disc.shown.size || '';
+	applyFilter(); highlight();
+	disc.busy = false;
+	if ((wait || (search.left != null && search.left <= SEARCH_RESERVE && Date.now() < search.reset)) && !disc.buffer.size) return caughtUp();
+	discStatus(err ? failure(err) : '');
+	if (!err && n && picked.length < 4 && disc.queries.some(q => !q.done)) more(2);
+}
+$('nav').addEventListener('click', e => {
+	const x = e.target.closest('[data-hide]');
+	if (!x) return;
+	e.preventDefault();
+	const k = x.dataset.hide.toLowerCase();
+	ls.set('explore-hidden', [...ls.get('explore-hidden', []), k].slice(-500));
+	learn(disc.items.get(k), -1);
+	x.closest('.sug').remove();
+	$('#sec-discover summary span:last-child').textContent = $('#disc-list').children.length || '';
+});
+$('nav').addEventListener('scroll', e => { const n = e.target; if (n.scrollTop + n.clientHeight > n.scrollHeight - 300 && $('#sec-discover').open && disc.I) more(2); }, { passive: true });
+$('#disc-more').addEventListener('click', () => more(2));
+$('#disc-mix').addEventListener('click', () => discover(true));
+$('#disc-reset').addEventListener('click', () => {
+	profile = { topics: {}, langs: {}, words: {} };
+	['explore-profile', 'explore-seen', 'explore-hidden'].forEach(k => ls.set(k, null));
+	discover(true);
 });
 
 $('#go').addEventListener('submit', e => {
@@ -654,9 +837,8 @@ function rate() {
 addEventListener('hashchange', route);
 tokenLabel();
 fillSection('#sec-recent', null, ls.get('explore-recent', []), true, 'Repositories you open appear here.');
-loadStars();
 rate();
-route();
+Promise.allSettled([loadStars(), route()]).then(() => discover());
 </script>
 </body>
 </html>
