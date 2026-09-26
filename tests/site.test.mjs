@@ -21,7 +21,10 @@ const API = {
 	'repos/someone/forked': { ...repo('someone/forked', { fork: true }), parent: { full_name: OTHER } },
 	[`repos/${OTHER}/releases`]: [{ name: 'v1.1', tag_name: 'v1.1', draft: false, prerelease: false, published_at: '2026-02-02T00:00:00Z', body_html: '', assets: [] }, { name: 'v1.0', tag_name: 'v1.0', draft: false, prerelease: false, published_at: '2026-01-02T00:00:00Z', body_html: '<p>notes</p>',
 		assets: [{ name: 'tool.tar.gz', size: 2048, download_count: 5, browser_download_url: `https://github.com/${OTHER}/releases/download/v1.0/tool.tar.gz` }] }],
-	'search/repositories': { total_count: 2, items: [repo('big/famous', { stargazers_count: 50000 }), repo('tiny/gem', { stargazers_count: 5 })] },
+	// Similar asks for 12 a page: pages 1 and 2 are full, page 3 ends the query.
+	'search/repositories': u => u.searchParams.get('per_page') === '12'
+		? { total_count: 29, items: Array.from({ length: u.searchParams.get('page') < 3 ? 12 : 5 }, (_, i) => repo(`sim/p${u.searchParams.get('page')}-${i}`)) }
+		: { total_count: 2, items: [repo('big/famous', { stargazers_count: 50000 }), repo('tiny/gem', { stargazers_count: 5 })] },
 	'users/many': { login: 'many', name: 'Many Repos', type: 'User', public_repos: 105, avatar_url: 'https://avatars.githubusercontent.com/u/2?v=4', html_url: 'https://github.com/many' },
 	'users/many/repos': u => { const pg = +(u.searchParams.get('page') || 1); return MANY.slice((pg - 1) * 100, pg * 100); },
 	user: () => ({ login: data.user.login }),
@@ -111,6 +114,7 @@ test('gists open from the build', async t => {
 	await open('gist/' + g.id);
 	assert.equal(await page.locator('main .filehead').count(), g.files.length);
 	assert.equal(await page.locator('[data-sec="gists"] a.active').count(), 1);
+	assert.equal(await page.evaluate(() => document.fonts.load('16px Iosevka').then(f => f.length)), 1, 'Iosevka loads from the site');
 	assert.deepEqual(apiCalls(), []);
 });
 
@@ -130,6 +134,12 @@ test("another user's repo loads live, with Similar only once scrolled into view"
 	await page.$eval('main', m => m.scrollTop = m.scrollHeight);
 	await page.waitForSelector('#similar .card');
 	assert.ok(calls.slice(before).every(c => c.startsWith('search/')), 'Similar uses search only');
+	assert.equal(await page.locator('#similar .card').count(), 12);
+	await page.$eval('main', m => m.scrollTop = m.scrollHeight);
+	await page.waitForFunction(() => document.querySelectorAll('#similar .card').length === 24);
+	await page.$eval('main', m => m.scrollTop = m.scrollHeight);
+	await page.waitForFunction(() => document.querySelectorAll('#similar .card').length === 29, null, { timeout: 5000 }).catch(() => {});
+	assert.ok(await page.locator('#similar .card').count() >= 29, 'Similar keeps paging in as you scroll');
 });
 
 test('repos without topics or descriptions open and feed Discover', async () => {

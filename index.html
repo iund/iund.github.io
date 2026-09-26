@@ -6,7 +6,6 @@ layout: null
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="color-scheme" content="light dark">
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/iosevka@5.3.0/400.css">
 	<title>{{ site.data.user.login | default: "iund" }}</title>
 	<style>
 		:root {
@@ -21,6 +20,8 @@ layout: null
 				--text: #0f1f2f; --dim: #50657a; --link: #1d5aa6; --ok: #1e7a3c; --bad: #b3261e; --run: #856a00; --star: #9a5b00;
 			}
 		}
+		/* Iosevka 400 (from @fontsource/iosevka 5.3.0), subset to Latin, punctuation, arrows and box drawing with ss12 kept: 39 KB instead of 984 KB. */
+		@font-face { font-family: "Iosevka"; font-display: swap; src: url("fonts/Iosevka/iosevka-ss12.woff2") format("woff2"); }
 		@font-face { font-family: "Bariol"; src: url("fonts/Bariol Regular Webfont/bariol_regular-webfont.woff2") format("woff2"), url("fonts/Bariol Regular Webfont/bariol_regular-webfont.woff") format("woff"); }
 		body { margin: 0; font-family: "Bariol", sans-serif; background: var(--main); color: var(--text); }
 		a { color: var(--link); }
@@ -765,28 +766,43 @@ function fixLinks(el, r) {
 const STOP = new Set('the and for with from that this your into over using based simple small tool tools library written code project app application'.split(' '));
 // Recent entries saved before names were stored only have full_name, so fall back to it.
 const keywords = r => (((r.description || '') + ' ' + (r.name || r.full_name.split('/')[1]).replace(/[-_.]/g, ' ')).toLowerCase().match(/[a-z][a-z\d]{3,}/g) || []).filter(w => !STOP.has(w)).slice(0, 4);
-// Search calls have their own limit and don't use the hourly allowance; results are kept for a day.
-async function loadSimilar(r, n, refresh, skip = x => same(x.full_name, r.full_name)) {
-	const key = 'similar ' + r.full_name;
-	let saved = !refresh && cacheGet(key);
-	await part('similar', n, async () => {
-		if (!saved || Date.now() - saved.t > DAY) {
-			$('#similar').innerHTML = '<h2>Similar repositories</h2><p class="muted">Searching…</p>';
-			const lang = r.language ? ` language:"${r.language}"` : '', topics = r.topics || [], words = keywords(r).slice(0, 3);
-			if (!topics.length && !words.length) return '<p class="muted">Nothing to match on: no topics or descriptions.</p>';
-			const queries = [...new Set(topics.length
-				? [topics.slice(0, 2).map(t => 'topic:' + t).join(' ') + lang, 'topic:' + topics[0] + lang, 'topic:' + topics[0]]
-				: [words.join(' ') + ' in:name,description,topics' + lang, words.slice(0, 2).join(' ') + ' in:name,description,topics'])];
-			const found = [];
-			for (const q of queries) {
-				for (const x of (await request(`search/repositories?per_page=12&sort=stars&q=${encodeURIComponent(q)}`)).d.items)
-					if (!skip(x) && !found.some(f => f.full_name === x.full_name)) found.push(slimRepo(x));
-				if (found.length >= 8) break;
+// Similar repositories page in as the end of the list comes into view, 8 at a time, working from the closest match
+// (shared topics and language) to broader ones. Search calls have their own per-minute limit, so paging stops a couple of
+// searches short of it ("all caught up"); each page is kept for a day.
+let similarNext = null;
+function loadSimilar(r, n, refresh, skip = x => same(x.full_name, r.full_name)) {
+	const sec = $('#similar'), lang = r.language ? ` language:"${r.language}"` : '', topics = r.topics || [], words = keywords(r).slice(0, 3);
+	if (!topics.length && !words.length) return sec.insertAdjacentHTML('beforeend', '<p class="muted">Nothing to match on: no topics or descriptions.</p>');
+	const queries = [...new Set(topics.length
+		? [topics.slice(0, 2).map(t => 'topic:' + t).join(' ') + lang, 'topic:' + topics[0] + lang, 'topic:' + topics[0]]
+		: [words.join(' ') + ' in:name,description,topics' + lang, words.slice(0, 2).join(' ') + ' in:name,description,topics'])];
+	sec.insertAdjacentHTML('beforeend', '<div class="cards"></div><p class="muted" id="similar-more">Searching…</p>');
+	const grid = sec.querySelector('.cards'), status = $('#similar-more'), found = new Set();
+	let qi = 0, page = 1, busy = false;
+	const next = similarNext = async () => {
+		if (busy || n !== seq || qi >= queries.length) return;
+		busy = true;
+		let added = 0;
+		try {
+			while (added < 8 && qi < queries.length) {
+				if (search.left != null && search.left <= SEARCH_RESERVE && Date.now() < search.reset)
+					return status.innerHTML = `<b>✓ You're all caught up.</b> <button class="linkish" id="similar-next">More</button> after ${clock(search.reset / 1000, true)}.`;
+				status.textContent = 'Searching…';
+				const res = await gh(`search/repositories?per_page=12&sort=stars&page=${page}&q=${encodeURIComponent(queries[qi])}`, { ttl: DAY, refresh, map: d => ({ items: d.items.map(slimRepo) }) });
+				if (n !== seq) return;
+				const fresh = res.items.filter(x => !skip(x) && !found.has(x.full_name));
+				fresh.forEach(x => found.add(x.full_name));
+				grid.insertAdjacentHTML('beforeend', fresh.map(card).join(''));
+				added += fresh.length;
+				if (res.items.length < 12 || page >= 10) { qi++; page = 1; } else page++;
 			}
-			cachePut(key, saved = { t: Date.now(), d: { items: found.slice(0, 8) } });
-		}
-		return (saved.d.items.length ? `<div class="cards">${saved.d.items.map(card).join('')}</div>` : '<p class="muted">Nothing similar found.</p>');
-	});
+			status.textContent = qi < queries.length ? '' : found.size ? '' : 'Nothing similar found.';
+		} catch (e) { status.textContent = failure(e); qi = queries.length; }
+		finally { busy = false; }
+		if (qi < queries.length) { io.unobserve(status); io.observe(status); } else io.disconnect();
+	};
+	const io = new IntersectionObserver(([e]) => e.isIntersecting && next(), { rootMargin: '0px 0px 300px 0px' });
+	next().then(() => n === seq && qi < queries.length && io.observe(status));
 }
 
 // One call lists every file (cached for a day per branch); file contents come from raw.githubusercontent.com.
@@ -1002,6 +1018,7 @@ main.addEventListener('click', async e => {
 		b.disabled = false;
 		return;
 	}
+	if (b.id === 'similar-next') return similarNext && similarNext();
 	if (b.id === 'refresh') { refreshSeq = seq + 1; state.owner = null; return route(); }
 	if (b.id === 'star') {
 		const r = state.repo, on = b.classList.contains('on');
