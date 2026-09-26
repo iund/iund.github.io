@@ -23,5 +23,9 @@ while read -r repo <&3; do
 done 3< "$T/repos" | jq -s . > _data/repos.json
 
 # Gist endpoints reject GITHUB_TOKEN, so list anonymously (one call); the page loads file contents from raw_url.
-curl -sf "https://api.github.com/users/$U/gists?per_page=100" \
-	| jq 'map({id, owner: .owner.login, description, html_url, updated_at, files: [.files[] | {filename, language, raw_url}]})' > _data/gists.json
+# Runners share IPs, so that call can hit the anonymous rate limit: then keep the list from the published site.
+if ! curl -sf "https://api.github.com/users/$U/gists?per_page=100" \
+	| jq 'map({id, owner: .owner.login, description, html_url, updated_at, files: [.files[] | {filename, language, raw_url}]})' > _data/gists.json; then
+	echo "Gist list unavailable; reusing the published one" >&2
+	curl -sf "https://${U,,}.github.io/" | sed -n 's|.*<script id="site-data" type="application/json">\(.*\)</script>.*|\1|p' | jq '.gists' > _data/gists.json
+fi
