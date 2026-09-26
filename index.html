@@ -161,8 +161,8 @@ layout: null
 		<button class="btn" id="token-btn" aria-expanded="false" aria-controls="settings">Token</button>
 	</header>
 	<form id="settings" hidden>
-		<label for="token" title="Raises the API limit from 60 to 5,000 calls an hour, turns on starring and your Starred list, and shows your access to each repository. Create a fine-grained token with Public repositories (read-only) access and the account permission Starring: read and write. To also list your private repositories, choose All repositories with Contents, Metadata and Actions: read-only. To add and edit your gists, add Gists: read and write (the gist scope on a classic token). It is only sent to api.github.com.">Personal access token</label>
-		<input id="token" type="password" autocomplete="off" placeholder="github_pat_…" title="Fine-grained token: Public repositories (read-only), Starring: read and write. For private repositories: All repositories, Contents, Metadata and Actions: read-only. For gists: Gists: read and write (classic: gist scope)">
+		<label for="token" title="Raises the API limit from 60 to 5,000 calls an hour, turns on starring and your Starred list, and shows your access to each repository. Create a fine-grained token with Public repositories (read-only) access and the account permission Starring: read and write. To also list your private repositories, choose All repositories with Contents, Metadata and Actions: read-only. To add and edit your gists, add Gists: read and write (the gist scope on a classic token). To create repositories, add Administration: read and write (classic: repo or public_repo). It is only sent to api.github.com.">Personal access token</label>
+		<input id="token" type="password" autocomplete="off" placeholder="github_pat_…" title="Fine-grained token: Public repositories (read-only), Starring: read and write. For private repositories: All repositories, Contents, Metadata and Actions: read-only. For gists: Gists: read and write (classic: gist scope). To create repositories: Administration: read and write (classic: repo)">
 		<button class="btn">Save</button>
 		<button class="btn" type="button" id="token-clear">Clear</button>
 		<p id="token-status"></p>
@@ -170,7 +170,7 @@ layout: null
 	</form>
 	<nav>
 		<input id="filter" type="search" placeholder="Filter lists" aria-label="Filter lists" autocomplete="off">
-		<details data-sec="mine" open><summary><span></span></summary><div></div></details>
+		<details data-sec="mine" open><summary><span></span><span></span></summary><div></div></details>
 		<details data-sec="gists" open><summary><span>Gists</span><span></span></summary><div></div></details>
 		<details data-sec="stars" open hidden><summary><span>Starred</span></summary><div></div></details>
 		<details data-sec="recent" open><summary><span>Recent</span></summary><div></div></details>
@@ -212,6 +212,7 @@ const ICON = {
 	save: svg('<path d="M3 2h8l2.5 2.5V13a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5 2v4h5V2M5 14V9.5h6V14"/>'),
 	del: svg('<path d="M2.5 4h11M6 4V2.5h4V4m-5.5 0 .6 9.5h5.8l.6-9.5M6.8 6.5v5m2.4-5v5"/>'),
 	plus: svg('<path d="M8 3v10M3 8h10"/>'),
+	fork: svg('<circle cx="4.5" cy="3" r="1.5"/><circle cx="11.5" cy="3" r="1.5"/><circle cx="8" cy="13" r="1.5"/><path d="M4.5 4.5v1a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2v-1M8 7.5v4"/>'),
 	play: svg('<path d="M5 3.5v9l7-4.5z"/>'),
 	code: svg('<path d="M6 4 2 8l4 4M10 4l4 4-4 4"/>'),
 	gear: svg('<circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>'),
@@ -378,6 +379,12 @@ const repoLink = (r, full, extra = '') => `<a href="#${esc(r.full_name)}" data-f
 const card = r => `<a class="card" href="#${esc(r.full_name)}"><b>${esc(r.full_name)}</b><span class="d">${esc(r.description || '')}</span><small>${priv(r)}${esc(r.language || '')}${r.language ? ' · ' : ''}★ ${num(r.stargazers_count)} · updated ${when(r.pushed_at)}</small></a>`;
 const gistTitle = g => g.description || (g.files[0] || {}).filename || g.id;
 const byTitle = (a, b) => gistTitle(a).localeCompare(gistTitle(b), undefined, { sensitivity: 'base' });
+// Your token can create repos in your account; a classic token needs the repo or public_repo scope.
+const canRepo = () => !!token && !!me && isOwner(me) && (scopes == null || /\b(public_)?repo\b/.test(scopes));
+function showMine() {
+	fill('mine', MINE, { title: OWNER, empty: 'No repositories.' });
+	$('[data-sec="mine"] > summary > span:last-child').innerHTML = canRepo() ? '<button class="add" id="repo-new" title="New repository">+</button>' : '';
+}
 // Only a gist's owner can edit it; a classic token must also have the gist scope.
 const canGist = () => !!token && !!me && isOwner(me) && (scopes == null || /\bgist\b/.test(scopes));
 function showGists() {
@@ -462,13 +469,14 @@ async function loadMine() {
 	GISTS = gists || SITE.gists || [];
 	showGists();
 	MINE = all ? all.map(r => { const b = BUILT.find(x => same(x.full_name, r.full_name)); return b ? { ...b, private: r.private, permissions: r.permissions } : r; }) : BUILT;
-	fill('mine', MINE, { title: OWNER, empty: 'No repositories.' });
+	showMine();
 }
 
 // ---- Routing ----
 async function route() {
 	const n = ++seq, refresh = n === refreshSeq, raw = location.hash.slice(1);
 	try {
+		if (raw === '~new-repo' && canRepo()) return newRepo();
 		if (raw.startsWith('~search/')) return await showSearch(decodeURIComponent(raw.slice(8)), null, n);
 		if (raw.startsWith('~parent/')) {
 			const full = decodeURIComponent(raw.slice(8)), r = await gh(`repos/${full}`, { map: d => d && slimRepo(d) });
@@ -638,6 +646,7 @@ async function showRepo(owner, name, at, n, refresh) {
 		</div>
 		<div class="clone">
 			${btn('star', 'star', token ? 'id="star"' : 'id="star" disabled title="Save a token under Token to star repositories"')}
+			${me && same(r.owner.login, me) ? '' : btn('fork', 'fork', token ? `id="fork" title="Fork into ${esc(me || 'your account')}"` : 'id="fork" disabled title="Save a token under Token to fork repositories"')}
 			${ext(r.html_url, ICON.eye + 'github', 'View on GitHub')}
 			${btn('copy', 'ssh', `data-copy="${esc(r.ssh_url)}" title="Copy ${esc(r.ssh_url)}"`)}
 			${btn('copy', 'https', `data-copy="${esc(r.clone_url)}" title="Copy ${esc(r.clone_url)}"`)}
@@ -782,7 +791,7 @@ async function openFiles(at, scroll) {
 			const t = await gh(`repos/${r.full_name}/git/trees/${encodeURIComponent(ref)}?recursive=1`, { ttl: DAY, map: d => d && { truncated: d.truncated, tree: d.tree.map(x => ({ path: x.path, type: x.type, size: x.size })) } });
 			if (!t) return box.innerHTML = '<p class="muted">This repository has no files on that branch.</p>';
 			state.files = { ref, ...t };
-		} catch (e) { return box.innerHTML = `<p class="muted">${esc(failure(e))}</p>`; }
+		} catch (e) { return box.innerHTML = `<p class="muted">${e instanceof Response && e.status === 409 ? 'This repository is empty.' : esc(failure(e))}</p>`; }
 	}
 	const { tree, truncated } = state.files, base = esc(`#${r.full_name}/`), path = at.path || '', segs = path ? path.split('/') : [];
 	const link = (kind, p, text) => `<a href="${base}${kind}/${esc(ref)}${p ? '/' + esc(p) : ''}">${text}</a>`;
@@ -840,6 +849,17 @@ function newGist() {
 	setQ('');
 	main.innerHTML = `<div class="head"><div><h1>New gist</h1><p><input id="gdesc" placeholder="Description (optional)" aria-label="Description" style="width:100%;box-sizing:border-box"></p><p><label><input type="checkbox" id="gpublic" checked> public</label></p></div>
 		<div class="clone">${btn('plus', 'add file', 'id="gist-add" title="Add another file"')}${btn('save', 'create', 'id="gist-create" title="Create the gist"')}</div></div>` + fileSec({ filename: '' }, true);
+}
+// A new repo is created empty (no README, license or .gitignore); its page then offers the clone links.
+function newRepo() {
+	view('New repository', null, true);
+	setQ('');
+	main.innerHTML = `<div class="head"><div><h1>New repository</h1>
+		<p><input id="rname" placeholder="Name" aria-label="Name" spellcheck="false" style="width:100%;box-sizing:border-box"></p>
+		<p><input id="rdesc-new" placeholder="Description (optional)" aria-label="Description" style="width:100%;box-sizing:border-box"></p>
+		<p><label><input type="checkbox" id="rpublic" checked> public</label></p><p class="muted" id="rstatus"></p></div>
+		<div class="clone">${btn('save', 'create', 'id="repo-create" title="Create an empty repository"')}</div></div>`;
+	$('#rname').focus();
 }
 // Writes go straight to GitHub; the answer replaces the listed gist and the cached list is dropped.
 const dropCache = f => {
@@ -922,6 +942,39 @@ main.addEventListener('click', async e => {
 		catch (err) { flash(b, gistFail(err)); b.disabled = false; }
 		return;
 	}
+	// Forks into the token's account (GitHub returns the existing fork if there is one), then opens it.
+	if (b.id === 'fork') {
+		const r = state.repo;
+		b.disabled = true;
+		try {
+			const { d } = await request(`repos/${r.full_name}/forks`, { method: 'POST' });
+			if (!d) throw new Error('failed');
+			const f = slimRepo(d);
+			dropCache(k => k.includes(' user/repos?') || k.includes(` users/${f.owner.login.toLowerCase()}/repos?`));
+			if (isOwner(f.owner.login) && !isMine(f.full_name)) { MINE = [...MINE, f].sort((x, y) => x.full_name.localeCompare(y.full_name, undefined, { sensitivity: 'base' })); showMine(); }
+			state.owner = null;
+			location.hash = f.full_name;
+		} catch (err) { flash(b, err instanceof Response && err.status === 403 ? 'token cannot fork' : 'failed'); b.disabled = false; }
+		return;
+	}
+	if (b.id === 'repo-create') {
+		const name = $('#rname').value.trim();
+		if (!name) return flash(b, 'name?');
+		b.disabled = true;
+		try {
+			const { d } = await request('user/repos', { method: 'POST', body: { name, description: $('#rdesc-new').value.trim(), private: !$('#rpublic').checked, auto_init: false } });
+			if (!d) throw new Error('Your token cannot create repositories.');
+			MINE = [...MINE, slimRepo(d)].sort((x, y) => x.full_name.localeCompare(y.full_name, undefined, { sensitivity: 'base' }));
+			if (state.owner && isOwner(state.owner)) state.repos = MINE;
+			dropCache(k => k.includes(' user/repos?'));
+			showMine();
+			location.hash = d.full_name;
+		} catch (err) {
+			$('#rstatus').textContent = err instanceof Response ? (err.status === 403 ? 'Your token cannot create repositories.' : await err.json().then(j => (j.errors && j.errors[0] && j.errors[0].message) || j.message, () => 'failed')) : err.message;
+			b.disabled = false;
+		}
+		return;
+	}
 	if (b.dataset.run) {
 		const r = state.repo;
 		b.disabled = true;
@@ -955,7 +1008,11 @@ main.addEventListener('click', async e => {
 });
 
 main.addEventListener('input', e => e.target.closest('section')?.querySelector('[data-save-file]')?.classList.add('dirty'));
-main.addEventListener('keydown', e => e.key === 'Enter' && /^[gr]desc$/.test(e.target.id) && e.target.blur());
+main.addEventListener('keydown', e => {
+	if (e.key !== 'Enter') return;
+	if (/^[gr]desc$/.test(e.target.id)) e.target.blur();
+	if (/^r(name|desc-new)$/.test(e.target.id)) $('#repo-create').click();
+});
 main.addEventListener('change', async e => {
 	if (e.target.id === 'rdesc' && state.repo) {
 		const r = state.repo, st = $('#rdesc-status'), full = r.full_name.toLowerCase();
@@ -964,7 +1021,7 @@ main.addEventListener('change', async e => {
 			if (!d) throw new Error('token lacks Administration');
 			r.description = d.description;
 			dropCache(k => k.includes(' user/repos?') || k.includes(` users/${r.owner.login.toLowerCase()}/repos?`) || k.endsWith(' repos/' + full));
-			if (isMine(r.full_name)) fill('mine', MINE, { title: OWNER, empty: 'No repositories.' });
+			if (isMine(r.full_name)) showMine();
 			else if (state.repos.includes(r)) fill('owner', state.repos, { title: state.owner });
 			st.textContent = 'saved';
 		} catch (err) { st.textContent = err instanceof Response ? (err.status === 403 ? 'token lacks Administration' : 'failed') : err.message; }
@@ -1128,7 +1185,7 @@ nav.addEventListener('click', e => {
 	x.closest('.sug').remove();
 });
 nav.addEventListener('scroll', () => { if (nav.scrollTop + nav.clientHeight > nav.scrollHeight - 300 && $('[data-sec="discover"]').open && disc.I) more(2); }, { passive: true });
-nav.addEventListener('click', e => { if (e.target.closest('#gist-new')) { e.preventDefault(); location.hash = 'gist/new'; } });
+nav.addEventListener('click', e => { const add = e.target.closest('.add'); if (add) { e.preventDefault(); location.hash = add.id === 'gist-new' ? 'gist/new' : '~new-repo'; } });
 $('#disc-more').addEventListener('click', () => more(2));
 $('#disc-mix').addEventListener('click', () => discover(true));
 $('#disc-reset').addEventListener('click', () => {
@@ -1181,7 +1238,7 @@ $('#consent-no').addEventListener('click', () => setConsent('no'));
 $$('.consent-open').forEach(b => b.addEventListener('click', () => $('#consent').hidden = false));
 if (!consent) $('#consent').hidden = false;
 
-fill('mine', MINE, { title: OWNER, empty: 'No repositories.' });
+showMine();
 showGists();
 fill('recent', ls.get('explore-recent', []), { full: true, empty: 'Repositories you open appear here.' });
 addEventListener('hashchange', route);

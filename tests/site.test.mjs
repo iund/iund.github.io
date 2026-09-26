@@ -25,7 +25,7 @@ const API = {
 	'users/many': { login: 'many', name: 'Many Repos', type: 'User', public_repos: 105, avatar_url: 'https://avatars.githubusercontent.com/u/2?v=4', html_url: 'https://github.com/many' },
 	'users/many/repos': u => { const pg = +(u.searchParams.get('page') || 1); return MANY.slice((pg - 1) * 100, pg * 100); },
 	user: () => ({ login: data.user.login }),
-	'user/repos': () => [{ ...data.repos[0], permissions: { admin: true, push: true, pull: true } }, repo(`${data.user.login}/secret`, { private: true, permissions: { admin: true, push: true, pull: true } })],
+	'user/repos': (u, req) => req.method() === 'POST' ? { ...repo(`${data.user.login}/${req.postDataJSON().name}`, { description: req.postDataJSON().description, private: req.postDataJSON().private }), permissions: { admin: true, push: true, pull: true }, auto_init: req.postDataJSON().auto_init } : [{ ...data.repos[0], permissions: { admin: true, push: true, pull: true } }, repo(`${data.user.login}/secret`, { private: true, permissions: { admin: true, push: true, pull: true } })],
 	[`repos/${OTHER}`]: { ...repo(OTHER), permissions: { pull: true } },
 	rate_limit: { resources: { core: { remaining: 60, limit: 60, reset: 2e9 }, search: { remaining: 10, limit: 10, reset: 2e9 } } },
 };
@@ -93,7 +93,7 @@ test('your repos open from the build with all sections and buttons', async t => 
 	await open(r.full_name);
 	assert.equal(await page.textContent('main h1 >> nth=0'), r.name + (r.fork ? ' fork' : '') + (r.archived ? ' archived' : ''));
 	const labels = await page.$$eval('main .head .clone > :not(.sep)', els => els.map(e => e.textContent.trim()));
-	assert.deepEqual(labels, ['star', 'github', 'ssh', 'https', 'zip', 'releases', 'actions', 'readme', 'files']);
+	assert.deepEqual(labels, ['star', 'fork', 'github', 'ssh', 'https', 'zip', 'releases', 'actions', 'readme', 'files']);
 	assert.deepEqual(await page.$$eval('main > section > h2', hs => hs.map(h => h.textContent)), ['Releases', 'Actions', 'README']);
 	assert.equal(await page.locator('#readme script').count(), 0, 'README is sanitised');
 	assert.deepEqual(apiCalls(), []);
@@ -229,7 +229,7 @@ test('your own token lists private repos and turns your access into buttons', as
 	await open(`${me}/secret/blob/main/a.txt`);
 	assert.match(await page.textContent('main h1'), /secret private/);
 	await page.waitForSelector('#actions [data-run]');
-	assert.deepEqual(await page.$$eval('main .head .clone > :not(.sep)', els => els.slice(0, 3).map(e => e.textContent.trim())), ['vscode', 'settings', 'star']);
+	assert.deepEqual(await page.$$eval('main .head .clone > :not(.sep)', els => els.slice(0, 4).map(e => e.textContent.trim())), ['vscode', 'settings', 'star', 'github'], 'no fork button on your own repo');
 	assert.deepEqual(await page.$$eval('#actions [data-run]', bs => bs.map(b => b.textContent.trim())), ['Pages'], 'only workflows with workflow_dispatch');
 	assert.equal(await page.textContent('#releases > h2 .clone'), 'release');
 	await page.click('#actions [data-run]');
@@ -247,6 +247,18 @@ test('your own token lists private repos and turns your access into buttons', as
 	await page.waitForTimeout(300);
 	assert.ok(calls.includes(`repos/${OTHER}`), 'permissions fetched');
 	assert.equal(await page.locator('main .head a:has-text("settings"), main .head a:has-text("vscode"), input#rdesc').count(), 0, 'read access adds no buttons');
+	API[`repos/${OTHER}/forks`] = { ...repo(`${me}/tool`, { fork: true }), permissions: { admin: true, push: true, pull: true } };
+	await page.click('#fork');
+	await page.waitForFunction(me => location.hash === `#${me}/tool`, me);
+	assert.ok(calls.includes(`POST repos/${OTHER}/forks`));
+	assert.match(await page.textContent('[data-sec="mine"]'), /tool/);
+	await page.click('[data-sec="mine"] #repo-new');
+	await page.fill('#rname', 'fresh');
+	await page.press('#rname', 'Enter');
+	await page.waitForFunction(me => location.hash === `#${me}/fresh`, me);
+	await page.waitForSelector('main [data-copy^="git@"]');
+	assert.match(await page.textContent('[data-sec="mine"]'), /fresh/);
+	assert.ok(calls.includes('POST user/repos'));
 	assert.equal(calls.filter(c => c === 'user/repos').length, 1);
 });
 
@@ -267,7 +279,7 @@ test('your own token adds, edits and deletes gists, sorted by title', async () =
 	await open('gist/z1');
 	assert.deepEqual(await page.$$eval('[data-sec="gists"] a .line', as => as.map(a => a.textContent)), ['alpha', 'Zed notes']);
 	assert.equal(await page.locator('[data-sec="gists"] summary #gist-new').count(), 1);
-	assert.equal(await page.locator('nav summary > span:nth-child(2):not(:empty)').count(), 1, 'only the gist + is left in the list headings');
+	assert.equal(await page.locator('nav summary > span:nth-child(2):not(:empty)').count(), 2, 'only the repo and gist + are left in the list headings');
 	assert.equal(await page.inputValue('main section >> nth=0 >> .fname'), 'a.txt');
 	await page.waitForSelector('main section >> nth=0 >> textarea');
 	assert.match(await page.inputValue('main section >> nth=0 >> textarea'), /Hello/);
