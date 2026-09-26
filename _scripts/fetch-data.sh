@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Fetches public repos (README HTML, releases, Actions runs) and gists (file contents are loaded by the page) into _data/ for Jekyll.
+# Fetches the owner's profile, public repos (README HTML, releases, Actions runs) and gists into _data/ for Jekyll.
 set -euo pipefail
 U=${GITHUB_REPOSITORY_OWNER:-iund}
 T=$(mktemp -d)
 mkdir -p _data
 
+gh api "users/$U" --jq '{login, name, bio, blog, location, type, public_repos, followers, avatar_url, html_url}' > _data/user.json
 gh api --paginate "users/$U/repos?per_page=100" \
-	--jq '.[] | {name, description, html_url, ssh_url, clone_url, default_branch, homepage, language, stargazers_count, fork}' > "$T/repos"
+	--jq '.[] | {name, full_name, owner: {login: .owner.login}, description, html_url, ssh_url, clone_url, default_branch, homepage, language, stargazers_count, fork, archived, topics, license: (if .license then {spdx_id: .license.spdx_id} else null end), pushed_at, created_at}' > "$T/repos"
 while read -r repo <&3; do
 	r=$(jq -r .name <<<"$repo")
 	gh api -H 'Accept: application/vnd.github.html+json' "repos/$U/$r/readme" > "$T/readme" 2>/dev/null || : > "$T/readme"
-	gh api "repos/$U/$r/releases?per_page=5" \
-		--jq '[.[] | {tag_name, name, html_url, published_at, assets: [.assets[] | {name, browser_download_url}]}]' > "$T/releases"
+	gh api -H 'Accept: application/vnd.github.html+json' "repos/$U/$r/releases?per_page=6" \
+		--jq '[.[] | {name, tag_name, draft, prerelease, published_at, body_html, assets: [.assets[] | {name, size, download_count, browser_download_url}]}]' > "$T/releases"
 	gh api "repos/$U/$r/actions/runs?per_page=10" \
 		--jq '[.workflow_runs[] | {name, head_branch, status, conclusion, created_at, html_url}]' > "$T/runs" 2>/dev/null || echo '[]' > "$T/runs"
 	jq --rawfile readme "$T/readme" --slurpfile releases "$T/releases" --slurpfile runs "$T/runs" \
