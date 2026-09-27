@@ -149,6 +149,9 @@ layout: null
 		p.edit input { flex: 1; font: inherit; border: 0; border-radius: 0; background: none; padding: 0; }
 		.crumbs { margin-bottom: 0.5em; overflow-wrap: anywhere; }
 		.markdown-body img { max-width: 100%; }
+		/* Demo: a repo's own mockup.html, copied in by the build; drag the corner to resize. */
+		.mockup { height: min(75vh, 820px); min-height: 320px; resize: vertical; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; margin-top: 0.6em; }
+		.mockup iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
 		.markdown-body .anchor { display: none; }
 		.markdown-body table { border-collapse: collapse; display: block; overflow-x: auto; }
 		.markdown-body td, .markdown-body th { border: 1px solid var(--line); padding: 0.3em 0.6em; }
@@ -232,6 +235,7 @@ const ICON = {
 	plus: svg('<path d="M8 3v10M3 8h10"/>'),
 	fork: svg('<circle cx="4.5" cy="3" r="1.5"/><circle cx="11.5" cy="3" r="1.5"/><circle cx="8" cy="13" r="1.5"/><path d="M4.5 4.5v1a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2v-1M8 7.5v4"/>'),
 	play: svg('<path d="M5 3.5v9l7-4.5z"/>'),
+	demo: svg('<rect x="1.5" y="2.5" width="13" height="9" rx="1"/><path d="M5.5 14.5h5M8 11.5v3"/>'),
 	code: svg('<path d="M6 4 2 8l4 4M10 4l4 4-4 4"/>'),
 	gear: svg('<circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>'),
 	files: svg('<path d="M2 4.5A1.5 1.5 0 0 1 3.5 3H6l1.5 1.5h5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z"/>'),
@@ -647,7 +651,8 @@ async function showRepo(owner, name, at, n, refresh) {
 	learn(r, disc.shown.has(r.full_name.toLowerCase()) ? 2 : 1);
 	dwell.forEach(clearTimeout);
 	dwell = [20000, 60000].map(ms => setTimeout(() => state.repo === r && learn(r, 1), ms));
-	const sections = ['releases', ...(mine ? ['actions'] : []), 'readme', 'files', ...(mine ? [] : ['similar'])];
+	const mock = mine && !r.private && r.mockup;
+	const sections = [...(mock ? ['demo'] : []), 'releases', ...(mine ? ['actions'] : []), 'readme', 'files', ...(mine ? [] : ['similar'])];
 	main.innerHTML = `<div class="head"><div>
 			<h1>${esc(r.name)}${r.fork ? ` <a class="tag" href="#${r.parent ? esc(r.parent) : '~parent/' + esc(r.full_name)}" title="${r.parent ? 'Fork of ' + esc(r.parent) : 'Open the repository this is a fork of'}">fork</a>` : ''}${r.is_template ? ' <span class="tag">template</span>' : ''}${r.archived ? ' <span class="tag">archived</span>' : ''}${r.private ? ' <span class="tag priv">private</span>' : ''}</h1>
 			<p id="rdesc"${r.description ? '' : ' hidden'}>${esc(r.description)}</p>
@@ -673,6 +678,7 @@ async function showRepo(owner, name, at, n, refresh) {
 			<a href="${esc(r.html_url)}/archive/refs/heads/${encodeURIComponent(r.default_branch)}.zip" title="Download the ${esc(r.default_branch)} branch as ZIP">${ICON.dl}zip</a>
 			</span><span class="row">${sections.map(s => btn(s, s, `data-jump="${s}" title="Jump to ${s}"`)).join('')}</span>
 		</div></div>
+		${mock ? `<section id="demo"><h2>Demo</h2><div class="mockup"><iframe src="mockups/${encodeURIComponent(r.name)}.html" title="${esc(r.name)} demo"></iframe></div></section>` : ''}
 		<section id="releases"><h2>Releases</h2><p class="muted">Loading…</p></section>
 		${mine ? '<section id="actions"><h2>Actions</h2><p class="muted">Loading…</p></section>' : ''}
 		<section id="readme" class="markdown-body"><h2>README</h2><p class="muted">Loading…</p></section>

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Fetches the owner's profile, public repos (README HTML, releases, Actions runs) and gists into _data/ for Jekyll.
+# Fetches the owner's profile, public repos (README HTML, releases, Actions runs, mockup.html) and gists into _data/ for Jekyll.
 set -euo pipefail
 U=${GITHUB_REPOSITORY_OWNER:-iund}
 T=$(mktemp -d)
-mkdir -p _data
+# Mockups go outside the checkout; the Pages workflow copies them into _site/mockups after the Jekyll build.
+M=${MOCKUP_DIR:-$T/mockups}
+mkdir -p _data "$M"
 
 gh api "users/$U" --jq '{login, name, bio, blog, location, type, public_repos, followers, avatar_url, html_url}' > _data/user.json
 gh api --paginate "users/$U/repos?per_page=100" \
@@ -18,8 +20,11 @@ while read -r repo <&3; do
 	# The repo list doesn't say what a fork was forked from; one call per fork does.
 	parent=null
 	if [ "$(jq .fork <<<"$repo")" = true ]; then parent=$(gh api "repos/$U/$r" --jq '.parent.full_name | tojson'); fi
-	jq --rawfile readme "$T/readme" --slurpfile releases "$T/releases" --slurpfile runs "$T/runs" --argjson parent "$parent" \
-		'. + {readme: $readme, releases: $releases[0], runs: $runs[0], parent: $parent}' <<<"$repo"
+	# A repo's mockup.html is shown as its Demo, above its releases.
+	mockup=false
+	if gh api -H 'Accept: application/vnd.github.raw' "repos/$U/$r/contents/mockup.html" > "$T/mockup" 2>/dev/null; then mv "$T/mockup" "$M/$r.html"; mockup=true; fi
+	jq --rawfile readme "$T/readme" --slurpfile releases "$T/releases" --slurpfile runs "$T/runs" --argjson parent "$parent" --argjson mockup "$mockup" \
+		'. + {readme: $readme, releases: $releases[0], runs: $runs[0], parent: $parent, mockup: $mockup}' <<<"$repo"
 done 3< "$T/repos" | jq -s . > _data/repos.json
 
 # Gist endpoints reject GITHUB_TOKEN, so list anonymously (one call); the page loads file contents from raw_url.

@@ -93,8 +93,8 @@ test('home shows your profile tiles without API calls', async () => {
 });
 
 test('your repos open from the build with all sections and buttons', async t => {
-	if (!data.repos.length) return t.skip('no repos');
-	const r = data.repos[0];
+	const r = data.repos.find(x => !x.mockup);
+	if (!r) return t.skip('no repos without a mockup');
 	await open(r.full_name);
 	assert.equal(await page.textContent('main h1 >> nth=0'), r.name + (r.fork ? ' fork' : '') + (r.archived ? ' archived' : ''));
 	const rows = await page.$$eval('main .head .clone .row', rs => rs.map(r => [...r.children].map(e => e.textContent.trim())));
@@ -102,6 +102,30 @@ test('your repos open from the build with all sections and buttons', async t => 
 	assert.deepEqual(await page.$$eval('main > section > h2', hs => hs.map(h => h.textContent)), ['Releases', 'Actions', 'README']);
 	assert.equal(await page.locator('#readme script').count(), 0, 'README is sanitised');
 	assert.deepEqual(apiCalls(), []);
+});
+
+test('your repos with a mockup.html show it first, as Demo', async t => {
+	if (!data.repos.length) return t.skip('no repos');
+	const r = data.repos[0];
+	// Flag the repo in the built data and serve a stand-in mockup.
+	await page.route(`${SITE}/`, async route => {
+		const res = await route.fetch();
+		const body = (await res.text()).replace(/(<script id="?site-data"?[^>]*>)(.*?)(<\/script>)/s, (m, a, j, b) => {
+			const d = JSON.parse(j);
+			d.repos.find(x => x.full_name === r.full_name).mockup = true;
+			return a + JSON.stringify(d).replaceAll('</', '<\\/') + b;
+		});
+		route.fulfill({ response: res, body });
+	});
+	await page.route(`${SITE}/mockups/**`, route => route.fulfill({ contentType: 'text/html', body: '<p>demo</p>' }));
+	await open(r.full_name);
+	assert.deepEqual(await page.$$eval('main > section > h2', hs => hs.map(h => h.textContent)), ['Demo', 'Releases', 'Actions', 'README']);
+	assert.equal(await page.textContent('main .head .clone .row:nth-child(2) > :first-child'), 'demo');
+	assert.equal(await page.getAttribute('#demo iframe', 'src'), `mockups/${encodeURIComponent(r.name)}.html`);
+	assert.equal(await page.frameLocator('#demo iframe').locator('p').textContent(), 'demo');
+	await open(OTHER);
+	await page.waitForSelector('#similar', { state: 'attached' });
+	assert.equal(await page.locator('#demo').count(), 0, "other people's repos have no Demo");
 });
 
 test('old #repo/ links redirect to owner/repo', async t => {

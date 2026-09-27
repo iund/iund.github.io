@@ -25,6 +25,13 @@ jobs:
       - run: bash _scripts/fetch-data.sh
         env:
           GH_TOKEN: ${{ github.token }}
+          MOCKUP_DIR: ${{ runner.temp }}/mockups
+      # The fetched mockups, for inspecting a run; the site gets them through the Pages artifact.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mockups
+          path: ${{ runner.temp }}/mockups
+          if-no-files-found: ignore
       - uses: actions/jekyll-build-pages@v1
       - uses: actions/setup-node@v4
         with:
@@ -38,6 +45,12 @@ jobs:
             npx html-minifier-terser --collapse-whitespace --conservative-collapse --remove-comments --minify-css true \
               --minify-js '{"compress":{"toplevel":true},"mangle":{"toplevel":true}}' -o "$f.min" "$f" && mv "$f.min" "$f"
           done
+      # Build output only: the runner's _site, never committed.
+      - name: Add mockups
+        run: |
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/mockups/*.html)
+          if [ ${#files[@]} -gt 0 ]; then mkdir -p _site/mockups && cp "${files[@]}" _site/mockups/; fi
       - name: Install Playwright
         run: npm install --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
       - name: Test
